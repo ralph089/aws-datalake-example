@@ -1,0 +1,60 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: 'Terraform action'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Terraform Init
+        working-directory: infrastructure/environments/${{ inputs.environment }}
+        run: terraform init
+      
+      - name: Terraform Plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        working-directory: infrastructure/environments/${{ inputs.environment }}
+        run: terraform plan -out=tfplan
+      
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        working-directory: infrastructure/environments/${{ inputs.environment }}
+        run: terraform apply tfplan
+      
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        working-directory: infrastructure/environments/${{ inputs.environment }}
+        run: terraform destroy -auto-approve

@@ -1,0 +1,136 @@
+name: Deploy Glue Jobs
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'glue-jobs/**'
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'glue-jobs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Poetry
+        run: pip install poetry
+      
+      - name: Install dependencies
+        run: cd glue-jobs && poetry install
+      
+      - name: Run linter
+        run: make lint
+      
+      - name: Run unit tests
+        run: make test-unit
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "prefix=main" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "prefix=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "prefix=main" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "prefix=main" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "prefix=feature" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Poetry
+        run: pip install poetry
+      
+      - name: Package Glue jobs
+        run: |
+          cd glue-jobs
+          poetry export -f requirements.txt --output requirements.txt --without-hashes
+          cd src && zip -r ../../dist/utils.zip utils transformations validators -x "*/__pycache__/*"
+      
+      - name: Deploy to S3
+        run: |
+          # Upload utils library
+          aws s3 cp dist/utils.zip s3://glue-scripts-${{ steps.env.outputs.environment }}/libs/${{ steps.env.outputs.prefix }}/utils.zip
+          
+          # Upload job scripts
+          aws s3 cp glue-jobs/src/jobs/ s3://glue-scripts-${{ steps.env.outputs.environment }}/jobs/${{ steps.env.outputs.prefix }}/ \
+            --recursive --exclude "*.pyc" --exclude "__pycache__"
+      
+      - name: Update Glue job definitions for PR
+        if: github.event_name == 'pull_request'
+        run: |
+          # Update Glue jobs to use PR-specific scripts for testing
+          for job in customer_import sales_etl inventory_sync product_catalog; do
+            aws glue update-job \
+              --job-name ${job}-dev \
+              --job-update "Command={ScriptLocation=s3://glue-scripts-dev/jobs/${{ steps.env.outputs.prefix }}/${job}.py}" \
+              || echo "Job ${job}-dev not found, skipping"
+          done
+      
+      - name: Comment PR with deployment info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              body: `✅ Glue jobs deployed to dev for testing
+              
+              **Scripts Location:** \`s3://glue-scripts-dev/jobs/pr-${{ github.event.pull_request.number }}/\`
+              **Utils Library:** \`s3://glue-scripts-dev/libs/pr-${{ github.event.pull_request.number }}/utils.zip\`
+              
+              **Test your changes:**
+              1. Go to AWS Glue Console (dev environment)
+              2. Jobs are configured to use your PR scripts
+              3. Run jobs with test data
+              4. Check CloudWatch logs for results
+              
+              Scripts will revert to main after merge.`
+            })
