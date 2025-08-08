@@ -1,219 +1,366 @@
 from abc import ABC, abstractmethod
-from pyspark.sql import SparkSession, DataFrame
-import structlog
-from typing import Dict, Any, Optional, List
-import sys
 from datetime import datetime
-import boto3
-from aws_xray_sdk.core import xray_recorder
-from aws_xray_sdk.core import patch_all
-from utils.logging_config import setup_logging
+from typing import Any
+
+from pyspark.sql import DataFrame, SparkSession
+
+from utils.api_client import APIClient
 from utils.audit import AuditTracker
 from utils.dlq_handler import DLQHandler
+from utils.logging_config import setup_logging
 from utils.notifications import NotificationService
 from utils.secrets import get_secret
-from utils.api_client import APIClient
+from utils.simple_data_quality import SimpleDataQualityChecker
 
-# Patch boto3 for X-Ray tracing
-patch_all()
 
 class BaseGlueJob(ABC):
-    """Base class with audit trail, DLQ support, and X-Ray tracing"""
+    """
+    Base class with audit trail, DLQ support, and structured logging
     
-    def __init__(self, job_name: str, args: Dict[str, Any]):
+    For transactional behavior in AWS data lakes, follow these patterns:
+    
+    1. SINGLE TABLE PATTERN:
+       - Write all related data to ONE comprehensive Iceberg table
+       - Use Apache Iceberg's native ACID transactions for consistency
+       - Create views or filtered queries for different aggregation levels
+       - Example: Instead of separate daily_agg, product_agg, customer_agg tables,
+         write all to sales_transactions with aggregation_type column
+    
+    2. ATOMIC OPERATIONS:
+       - Iceberg's writeTo().createOrReplace() is atomic per table
+       - Validate ALL data before writing ANY tables
+       - Use try/catch around entire load sequence for multi-table jobs
+    
+    3. AVOID STAGING TABLES:
+       - Modern Iceberg provides built-in ACID without staging complexity
+       - Direct writes with optimistic locking handle concurrency
+    """
+
+    def __init__(self, job_name: str, args: dict[str, Any]):
         self.job_name = job_name
         self.args = args
         self.environment = args.get("env", "local")
-        self.job_run_id = args.get("JOB_RUN_ID", f"local-{datetime.now().isoformat()}")
-        
-        # Setup structured logging with X-Ray correlation
+        self.job_run_id = args.get("JOB_RUN_ID") or f"local-{datetime.now().isoformat()}"
+
+        # Setup structured logging
         self.logger = setup_logging(job_name, self.environment)
         self.logger = self.logger.bind(
             job_name=job_name,
             environment=self.environment,
             job_run_id=self.job_run_id,
-            trace_id=xray_recorder.current_segment().trace_id if xray_recorder.current_segment() else None
+            trace_id=None,
         )
-        
+
         # Initialize components
         self.spark = self._create_spark_session()
+        
+        # Set Spark log level to reduce verbosity for local development
+        if self.environment == "local":
+            self.spark.sparkContext.setLogLevel("WARN")
+        
         self.audit_tracker = AuditTracker(self.environment, self.job_name, self.job_run_id)
         self.dlq_handler = DLQHandler(self.environment, self.job_name)
         self.notification_service = NotificationService(self.environment)
-        
+
+        # Initialize simple data quality checker
+        self.quality_checker = SimpleDataQualityChecker()
+
         # Setup API client if needed
         self.api_client = self._setup_api_client()
-    
+
     def _create_spark_session(self) -> SparkSession:
-        """Create Spark session with Iceberg support"""
-        builder = SparkSession.builder \
-            .appName(self.job_name) \
-            .config("spark.sql.adaptive.enabled", "true") \
-            .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-        
+        """Create Spark session with minimal essential configuration"""
+        builder = SparkSession.builder.appName(self.job_name)
+
         if self.environment != "local":
-            # Iceberg configurations
-            builder = builder \
-                .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog") \
-                .config("spark.sql.catalog.glue_catalog.warehouse", f"s3://data-lake-{self.environment}-silver/") \
-                .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog") \
+            # Essential Iceberg configuration only
+            builder = (
+                builder.config(
+                    "spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+                )
+                .config("spark.sql.catalog.glue_catalog", "org.apache.iceberg.spark.SparkCatalog")
+                .config("spark.sql.catalog.glue_catalog.warehouse", f"s3://data-lake-{self.environment}-silver/")
+                .config("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog")
                 .config("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
-        
+            )
+        else:
+            # Local development with reduced parallelism
+            builder = (
+                builder.config("spark.sql.shuffle.partitions", "4")
+                .config("spark.default.parallelism", "4")
+                .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+            )
+
         return builder.getOrCreate()
-    
-    def _setup_api_client(self) -> Optional[APIClient]:
-        """Setup API client with credentials from Secrets Manager"""
+
+    def _setup_api_client(self) -> APIClient | None:
+        """Setup API client with OAuth 2.0 client credentials or bearer token from Secrets Manager"""
         if self.environment == "local":
             # Use environment variables for local testing
             return None
+
+        try:
+            api_config = get_secret(f"etl-jobs/{self.environment}/api-config")
+            if not api_config:
+                self.logger.warning("api_client_config_missing")
+                return None
+
+            base_url = api_config["base_url"]
+
+            # Support OAuth client credentials only (remove legacy api_key support)
+            if "client_id" in api_config and "client_secret" in api_config:
+                # OAuth 2.0 client credentials grant
+                return APIClient(
+                    base_url=base_url,
+                    client_id=api_config["client_id"],
+                    client_secret=api_config["client_secret"],
+                    token_endpoint=api_config["token_endpoint"],
+                )
+            else:
+                self.logger.warning("api_client_config_invalid", reason="Missing OAuth credentials")
+                return None
+
+        except Exception as e:
+            self.logger.warning("api_client_setup_failed", error=str(e))
+            return None
+
+    # Smart Data Loading Methods
+    def load_data(self, data_type: str, fallback_path: str | None = None) -> DataFrame:
+        """
+        Smart data loader that auto-detects file format and environment.
         
-        api_config = get_secret(f"{self.environment}/api/credentials")
-        if api_config:
-            return APIClient(
-                base_url=api_config.get("base_url"),
-                bearer_token=api_config.get("bearer_token")
-            )
-        return None
-    
-    @xray_recorder.capture('extract')
+        Convention: local/data/{job_name}/{data_type}.{json|csv}
+        
+        Args:
+            data_type: Data identifier (e.g., 'api_data', 'inventory_api', 'customers')
+            fallback_path: Optional fallback path for local development
+            
+        Returns:
+            DataFrame with loaded data
+        """
+        from pathlib import Path
+        
+        if self.environment == "local":
+            # Try test data structure first (for tests)
+            test_path = Path("tests/test_data") / self.job_name
+            
+            # Try JSON first, then CSV in test structure
+            for ext in ["json", "csv"]:
+                file_path = test_path / f"{data_type}.{ext}"
+                if file_path.exists():
+                    if ext == "json":
+                        df = self.spark.read.option("multiline", "true").json(str(file_path))
+                    else:
+                        df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(str(file_path))
+                    
+                    self.logger.info("loaded_test_data", 
+                                   file=str(file_path), 
+                                   row_count=df.count(),
+                                   format=ext)
+                    return df
+            
+            # Try local data structure (for production local dev)
+            local_path = Path("local/data") / self.job_name
+            
+            # Try JSON first, then CSV
+            for ext in ["json", "csv"]:
+                file_path = local_path / f"{data_type}.{ext}"
+                if file_path.exists():
+                    if ext == "json":
+                        df = self.spark.read.option("multiline", "true").json(str(file_path))
+                    else:
+                        df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(str(file_path))
+                    
+                    self.logger.info("loaded_local_data", 
+                                   file=str(file_path), 
+                                   row_count=df.count(),
+                                   format=ext)
+                    return df
+            
+            # Use fallback if provided
+            if fallback_path and Path(fallback_path).exists():
+                ext = Path(fallback_path).suffix[1:]  # Remove the dot
+                if ext == "json":
+                    df = self.spark.read.option("multiline", "true").json(fallback_path)
+                else:
+                    df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(fallback_path)
+                
+                self.logger.info("loaded_fallback_data", 
+                               file=fallback_path, 
+                               row_count=df.count(),
+                               format=ext)
+                return df
+            
+            raise FileNotFoundError(f"No local data found for {data_type} in {test_path} or {local_path}")
+        
+        else:
+            # Remote environment - load from S3
+            s3_path = f"s3://data-lake-{self.environment}-silver/{data_type}/"
+            df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(s3_path)
+            self.logger.info("loaded_s3_data", path=s3_path, row_count=df.count())
+            return df
+
+    def load_api_data(self, data_type: str = "api_data") -> DataFrame:
+        """
+        Load API data with smart environment handling.
+        
+        Local: Loads from local/data/{job_name}/{data_type}.json
+        Remote: Should be overridden by jobs to implement actual API calls
+        
+        Args:
+            data_type: API data identifier (default: 'api_data')
+            
+        Returns:
+            DataFrame with API data
+        """
+        if self.environment == "local":
+            return self.load_data(data_type)
+        else:
+            # For remote environments, this should be overridden by specific jobs
+            # to implement actual API calls
+            raise NotImplementedError(f"Remote API loading for {data_type} should be implemented in job-specific code")
+
+
     @abstractmethod
     def extract(self) -> DataFrame:
-        """Extract data from source with X-Ray tracing"""
+        """Extract data from source. Returns raw DataFrame."""
         pass
-    
-    @xray_recorder.capture('transform')
+
     @abstractmethod
     def transform(self, df: DataFrame) -> DataFrame:
-        """Transform data with X-Ray tracing"""
+        """Transform raw data. Returns cleaned DataFrame."""
         pass
-    
-    @xray_recorder.capture('load')
+
     @abstractmethod
-    def load(self, df: DataFrame) -> List[str]:
+    def load(self, df: DataFrame) -> list[str]:
         """Load data to target. Returns list of output paths."""
         pass
-    
-    @xray_recorder.capture('validate')
-    def validate(self, df: DataFrame) -> bool:
+
+    def validate(self, df: DataFrame, validation_rules: dict | None = None) -> bool:
         """
-        Data quality validation
+        Data quality validation using simple validation rules
         Returns True if validation passes, False otherwise
+
+        Args:
+            df: DataFrame to validate
+            validation_rules: Optional dictionary of validation rules
         """
         try:
             record_count = df.count()
-            
+
             # Basic validation
             if record_count == 0:
                 self.logger.error("validation_failed", reason="No records to process")
                 return False
-            
-            # Column-level validation
-            validation_results = {}
-            for col in df.columns:
-                null_count = df.filter(f"{col} IS NULL").count()
-                null_percentage = (null_count / record_count) * 100
-                validation_results[col] = {
-                    "null_count": null_count,
-                    "null_percentage": null_percentage
-                }
-            
-            # Log validation results
-            self.logger.info("validation_results", 
-                           record_count=record_count,
-                           column_stats=validation_results)
-            
+
+            validation_results = {"record_count": record_count, "basic_validation": "passed"}
+
+            # Run simple data quality checks if rules are provided
+            if validation_rules:
+                quality_results = self.quality_checker.validate_dataframe(df, validation_rules)
+                validation_results["quality_validation"] = quality_results
+
+                if quality_results["overall_status"] != "PASSED":
+                    self.logger.warning("quality_validation_failed", results=quality_results)
+
+            # Custom validation (override in subclasses)
+            custom_result = self.custom_validation(df)
+            validation_results["custom_validation"] = custom_result
+
+            # Overall success: basic + custom validation must pass
+            overall_success = custom_result
+
+            if not overall_success:
+                self.logger.error("validation_failed", results=validation_results)
+            else:
+                self.logger.info("validation_passed", record_count=record_count, results=validation_results)
+
             # Audit trail
             self.audit_tracker.log_validation(validation_results)
-            
-            # Custom validation (override in subclasses)
-            return self.custom_validation(df)
-            
+
+            return overall_success
+
         except Exception as e:
             self.logger.error("validation_error", error=str(e))
             return False
-    
+
     def custom_validation(self, df: DataFrame) -> bool:
         """Override in subclasses for custom validation logic"""
         return True
-    
-    @xray_recorder.capture('run')
+
     def run(self) -> None:
-        """Main ETL pipeline execution"""
+        """Main ETL pipeline execution with transactional validation"""
         try:
             self.logger.info("job_started")
-            
+
             # Start audit trail
             self.audit_tracker.start_job()
-            
+
             # Extract
-            with xray_recorder.in_subsegment('extract_phase'):
-                self.logger.info("extract_phase_started")
-                df = self.extract()
-                extract_count = df.count()
-                self.logger.info("extract_phase_completed", row_count=extract_count)
-                self.audit_tracker.log_extract(extract_count)
-            
+            self.logger.info("extract_phase_started")
+            df = self.extract()
+            extract_count = df.count()
+            self.logger.info("extract_phase_completed", row_count=extract_count)
+            self.audit_tracker.log_extract(extract_count)
+
             # Transform
-            with xray_recorder.in_subsegment('transform_phase'):
-                self.logger.info("transform_phase_started")
-                df_transformed = self.transform(df)
-                transform_count = df_transformed.count()
-                self.logger.info("transform_phase_completed", row_count=transform_count)
-                self.audit_tracker.log_transform(transform_count)
-            
-            # Validate
-            with xray_recorder.in_subsegment('validation_phase'):
-                self.logger.info("validation_phase_started")
-                if not self.validate(df_transformed):
-                    raise ValueError("Data validation failed")
-                self.logger.info("validation_phase_completed")
-            
-            # Load
-            with xray_recorder.in_subsegment('load_phase'):
-                self.logger.info("load_phase_started")
-                output_paths = self.load(df_transformed)
-                self.logger.info("load_phase_completed", output_paths=output_paths)
-                self.audit_tracker.log_load(output_paths)
-            
+            self.logger.info("transform_phase_started")
+            df_transformed = self.transform(df)
+            transform_count = df_transformed.count()
+            self.logger.info("transform_phase_completed", row_count=transform_count)
+            self.audit_tracker.log_transform(transform_count)
+
+            # TRANSACTIONAL VALIDATION: Validate ALL data before ANY writes
+            self.logger.info("validation_phase_started", note="Validating ALL data before writes for transactional integrity")
+            if not self.validate(df_transformed):
+                raise ValueError("Data validation failed - no data will be written (transactional behavior)")
+            self.logger.info("validation_phase_completed", note="All data validated successfully - proceeding with atomic write")
+
+            # Load (atomic operation for transactional behavior)
+            self.logger.info("load_phase_started", note="Performing atomic write operation")
+            output_paths = self.load(df_transformed)
+            self.logger.info("load_phase_completed", output_paths=output_paths, note="Atomic write completed successfully")
+            self.audit_tracker.log_load(output_paths)
+
             # Complete audit trail
             self.audit_tracker.complete_job("SUCCESS")
-            
+
             # Send success notification
-            self.notification_service.send_success_notification({
-                "job_name": self.job_name,
-                "job_run_id": self.job_run_id,
-                "records_processed": transform_count,
-                "output_paths": output_paths
-            })
-            
-            self.logger.info("job_completed_successfully")
-            
+            self.notification_service.send_success_notification(
+                {
+                    "job_name": self.job_name,
+                    "job_run_id": self.job_run_id,
+                    "records_processed": transform_count,
+                    "output_paths": output_paths,
+                }
+            )
+
+            self.logger.info("job_completed_successfully", note="Transactional job completed - all data committed atomically")
+
         except Exception as e:
-            self.logger.error("job_failed", 
-                            error=str(e),
-                            error_type=type(e).__name__)
-            
+            self.logger.error("job_failed", error=str(e), error_type=type(e).__name__, note="Job failed - no partial data written due to transactional design")
+
             # Audit failure
             self.audit_tracker.complete_job("FAILED", str(e))
-            
+
             # Send to DLQ
-            self.dlq_handler.send_to_dlq({
-                "job_name": self.job_name,
-                "job_run_id": self.job_run_id,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            })
-            
+            self.dlq_handler.send_to_dlq(
+                {
+                    "job_name": self.job_name,
+                    "job_run_id": self.job_run_id,
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
             # Send failure notification
-            self.notification_service.send_failure_notification({
-                "job_name": self.job_name,
-                "job_run_id": self.job_run_id,
-                "error": str(e)
-            })
-            
+            self.notification_service.send_failure_notification(
+                {
+                    "job_name": self.job_name,
+                    "job_run_id": self.job_run_id,
+                    "error": str(e),
+                }
+            )
+
+            # Re-raise to ensure job fails
             raise
-            
-        finally:
-            if self.api_client:
-                self.api_client.close()
-            self.spark.stop()

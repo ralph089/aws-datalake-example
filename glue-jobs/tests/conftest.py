@@ -1,8 +1,10 @@
-import pytest
-import boto3
-from moto import mock_s3, mock_secretsmanager, mock_sqs, mock_sns
 import json
 import os
+
+import boto3
+import pytest
+from moto import mock_aws
+
 
 @pytest.fixture
 def aws_credentials():
@@ -13,10 +15,11 @@ def aws_credentials():
     os.environ["AWS_SESSION_TOKEN"] = "testing"
     os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 
+
 @pytest.fixture
 def s3_client(aws_credentials):
     """Create mocked S3 client"""
-    with mock_s3():
+    with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         # Create test buckets
         client.create_bucket(Bucket="test-bronze")
@@ -27,162 +30,255 @@ def s3_client(aws_credentials):
         client.create_bucket(Bucket="data-lake-dev-gold")
         yield client
 
+
 @pytest.fixture
 def secrets_client(aws_credentials):
     """Create mocked Secrets Manager client"""
-    with mock_secretsmanager():
+    with mock_aws():
         client = boto3.client("secretsmanager", region_name="us-east-1")
         # Create test secret
         client.create_secret(
             Name="dev/api/credentials",
-            SecretString=json.dumps({
-                "base_url": "https://api.example.com",
-                "bearer_token": "test-token-123"
-            })
+            SecretString=json.dumps({"base_url": "https://api.example.com", "bearer_token": "test-token-123"}),
         )
         yield client
+
 
 @pytest.fixture
 def sqs_client(aws_credentials):
     """Create mocked SQS client"""
-    with mock_sqs():
+    with mock_aws():
         client = boto3.client("sqs", region_name="us-east-1")
         # Create test DLQ
-        response = client.create_queue(
-            QueueName="dev-glue-dlq",
-            Attributes={
-                'MessageRetentionPeriod': '1209600',
-                'VisibilityTimeout': '300'
-            }
+        client.create_queue(
+            QueueName="dev-glue-dlq", Attributes={"MessageRetentionPeriod": "1209600", "VisibilityTimeout": "300"}
         )
         yield client
+
 
 @pytest.fixture
 def sns_client(aws_credentials):
     """Create mocked SNS client"""
-    with mock_sns():
+    with mock_aws():
         client = boto3.client("sns", region_name="us-east-1")
         # Create test topic
-        response = client.create_topic(Name="dev-job-notifications")
+        client.create_topic(Name="dev-job-notifications")
         yield client
+
 
 @pytest.fixture
 def sample_customer_data():
-    """Sample customer data for testing"""
+    """Sample customer data for testing using factory-boy"""
+    from tests.factories import CustomerFactory
+
     return [
-        {
-            "customer_id": "CUST001",
-            "first_name": "John",
-            "last_name": "Doe",
-            "email": "john.doe@example.com",
-            "phone": "5551234567",
-            "registration_date": "2023-01-15"
-        },
-        {
-            "customer_id": "CUST002",
-            "first_name": "Jane",
-            "last_name": "Smith",
-            "email": "jane.smith@example.com",
-            "phone": "(555) 987-6543",
-            "registration_date": "2023-02-20"
-        },
-        {
-            "customer_id": "CUST003",
-            "first_name": "Bob",
-            "last_name": "Johnson",
-            "email": "invalid-email",  # Invalid email for testing
-            "phone": "555-555-5555",
-            "registration_date": "2023-03-10"
-        }
+        CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
+                       email="john.doe@example.com", phone="5551234567"),
+        CustomerFactory(customer_id="CUST002", first_name="Jane", last_name="Smith",
+                       email="jane.smith@example.com", phone="(555) 987-6543", 
+                       registration_date="2023-02-20"),
+        CustomerFactory.with_invalid_email(customer_id="CUST003")
     ]
+
 
 @pytest.fixture
 def sample_sales_data():
-    """Sample sales data for testing"""
+    """Sample sales data for testing using factory-boy"""
+    from tests.factories import SalesTransactionFactory
+
     return [
-        {
-            "transaction_id": "TXN001",
-            "customer_id": "CUST001",
-            "product_id": "PROD001",
-            "quantity": 2,
-            "unit_price": 29.99,
-            "total_amount": 59.98,
-            "transaction_date": "2023-01-15"
-        },
-        {
-            "transaction_id": "TXN002",
-            "customer_id": "CUST002",
-            "product_id": "PROD002",
-            "quantity": 1,
-            "unit_price": 149.99,
-            "total_amount": 149.99,
-            "transaction_date": "2023-01-16"
-        },
-        {
-            "transaction_id": "TXN003",
-            "customer_id": "CUST001",
-            "product_id": "PROD001",
-            "quantity": 0,  # Invalid quantity for testing
-            "unit_price": 29.99,
-            "total_amount": 0,
-            "transaction_date": "2023-01-17"
-        }
+        SalesTransactionFactory(transaction_id="TXN001", customer_id="CUST001", 
+                               product_id="PROD001", quantity=2, unit_price=29.99,
+                               transaction_date="2023-01-15"),
+        SalesTransactionFactory(transaction_id="TXN002", customer_id="CUST002",
+                               product_id="PROD002", quantity=1, unit_price=149.99,
+                               transaction_date="2023-01-16"),
+        SalesTransactionFactory.with_invalid_quantity(transaction_id="TXN003")
     ]
 
-@pytest.fixture
-def sample_product_data():
-    """Sample product data for testing"""
-    return [
-        {
-            "product_id": "PROD001",
-            "product_name": "Wireless Headphones",
-            "category": "Electronics > Audio",
-            "brand": "TechBrand",
-            "price": 29.99,
-            "cost": 15.00,
-            "sku": "WH-001",
-            "in_stock": True
-        },
-        {
-            "product_id": "PROD002",
-            "product_name": "Smart Watch",
-            "category": "Electronics > Wearables",
-            "brand": "SmartTech",
-            "price": 149.99,
-            "cost": 75.00,
-            "sku": "SW-002",
-            "in_stock": True
-        },
-        {
-            "product_id": "PROD003",
-            "product_name": "Invalid Product",
-            "category": "Unknown",
-            "brand": "",
-            "price": -10.00,  # Invalid price for testing
-            "cost": 5.00,
-            "sku": "",
-            "in_stock": False
-        }
-    ]
 
 @pytest.fixture
 def sample_inventory_data():
-    """Sample inventory data for testing"""
+    """Sample inventory data for testing using factory-boy"""
+    from tests.factories import InventoryFactory
+
     return [
-        {
-            "product_id": "PROD001",
-            "location_id": "LOC001",
-            "quantity_on_hand": 150,
-            "reorder_point": 50,
-            "max_stock_level": 500,
-            "last_updated": "2023-01-15"
-        },
-        {
-            "product_id": "PROD002",
-            "location_id": "LOC001",
-            "quantity_on_hand": 25,  # Below reorder point
-            "reorder_point": 30,
-            "max_stock_level": 200,
-            "last_updated": "2023-01-15"
-        }
+        InventoryFactory.well_stocked(product_id="PROD001", location_id="LOC001"),
+        InventoryFactory.low_stock(product_id="PROD002", location_id="LOC001")
     ]
+
+
+# Centralized Mock Management Fixtures
+
+
+@pytest.fixture
+def job_mocks():
+    """
+    Centralized mock configuration for BaseGlueJob dependencies.
+
+    Eliminates the need for repetitive mock setup in every test.
+    Returns configured mocks for all BaseGlueJob dependencies.
+    """
+    from .integration.test_job_runner import MockConfigFactory
+
+    return MockConfigFactory.create_successful_job_flow_mocks()
+
+
+@pytest.fixture
+def failure_mocks():
+    """Mock configuration optimized for failure scenario testing."""
+    from .integration.test_job_runner import MockConfigFactory
+
+    return MockConfigFactory.create_failure_scenario_mocks()
+
+
+@pytest.fixture
+def mock_job_context(job_mocks):
+    """
+    Context manager fixture for applying job mocks.
+
+    Usage in tests:
+        def test_something(mock_job_context):
+            with mock_job_context as mocks:
+                # Test code here - all BaseGlueJob deps are mocked
+                job = CustomerImportJob("test", {"env": "local"})
+    """
+    from contextlib import ExitStack
+
+    from .integration.test_job_runner import MockConfigFactory
+
+    class MockJobContext:
+        def __init__(self, mocks):
+            self.mocks = mocks
+            self.patches = None
+            self.stack = None
+
+        def __enter__(self):
+            self.stack = ExitStack()
+            self.patches = MockConfigFactory.apply_job_mocks(self.mocks)
+
+            # Apply all patches using the stack
+            for patch_obj in self.patches:
+                self.stack.enter_context(patch_obj)
+
+            return self.mocks
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self.stack:
+                self.stack.__exit__(exc_type, exc_val, exc_tb)
+
+    return MockJobContext(job_mocks)
+
+
+@pytest.fixture
+def mock_failure_context(failure_mocks):
+    """Context manager fixture for failure scenario testing."""
+    from contextlib import ExitStack
+
+    from .integration.test_job_runner import MockConfigFactory
+
+    class MockJobContext:
+        def __init__(self, mocks):
+            self.mocks = mocks
+            self.patches = None
+            self.stack = None
+
+        def __enter__(self):
+            self.stack = ExitStack()
+            self.patches = MockConfigFactory.apply_job_mocks(self.mocks)
+
+            # Apply all patches using the stack
+            for patch_obj in self.patches:
+                self.stack.enter_context(patch_obj)
+
+            return self.mocks
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if self.stack:
+                self.stack.__exit__(exc_type, exc_val, exc_tb)
+
+    return MockJobContext(failure_mocks)
+
+
+# Factory Fixtures (replaces custom data builders)
+
+
+@pytest.fixture
+def customer_factory():
+    """Factory-boy CustomerFactory for test convenience."""
+    from tests.factories import CustomerFactory
+    return CustomerFactory
+
+
+@pytest.fixture
+def sales_factory():
+    """Factory-boy SalesTransactionFactory for test convenience."""
+    from tests.factories import SalesTransactionFactory
+    return SalesTransactionFactory
+
+
+@pytest.fixture
+def inventory_factory():
+    """Factory-boy InventoryFactory for test convenience."""
+    from tests.factories import InventoryFactory
+    return InventoryFactory
+
+
+@pytest.fixture
+def spark_factory():
+    """SparkDataFrameFactory for creating test DataFrames."""
+    from tests.factories import SparkDataFrameFactory
+    return SparkDataFrameFactory
+
+
+@pytest.fixture
+def scenario_factory():
+    """ScenarioFactory for complex test scenarios."""
+    from tests.factories import ScenarioFactory
+    return ScenarioFactory
+
+
+# Job Factory Fixtures
+
+
+@pytest.fixture
+def job_factory():
+    """
+    Factory for creating pre-configured job instances.
+
+    Usage:
+        def test_something(job_factory):
+            job = job_factory.customer_import("test_job_name")
+            # Job is pre-configured with runner's Spark session
+    """
+    from jobs.customer_import import CustomerImportJob
+    from jobs.inventory_sync import InventorySyncJob
+    from jobs.sales_etl import SalesETLJob
+
+    class JobFactory:
+        def __init__(self, runner):
+            self.runner = runner
+
+        def customer_import(self, job_name="test_customer_job", run_id=None):
+            run_id = run_id or f"test-{job_name}-123"
+            job = CustomerImportJob(job_name, {"env": "local", "JOB_RUN_ID": run_id})
+            job.spark = self.runner.spark
+            return job
+
+        def sales_etl(self, job_name="test_sales_job", run_id=None):
+            run_id = run_id or f"test-{job_name}-123"
+            job = SalesETLJob(job_name, {"env": "local", "JOB_RUN_ID": run_id})
+            job.spark = self.runner.spark
+            return job
+
+        def inventory_sync(self, job_name="test_inventory_job", run_id=None):
+            run_id = run_id or f"test-{job_name}-123"
+            job = InventorySyncJob(job_name, {"env": "local", "JOB_RUN_ID": run_id})
+            job.spark = self.runner.spark
+            return job
+
+    from .integration.test_job_runner import IntegrationTestRunner
+    runner = IntegrationTestRunner()
+    runner.setup_mock_aws_services()
+    runner.setup_spark_session()  # Initialize Spark session
+    return JobFactory(runner)

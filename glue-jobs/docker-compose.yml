@@ -1,22 +1,21 @@
-version: '3.8'
-
 services:
   glue:
-    image: amazon/aws-glue-libs:glue_libs_4.0.0_image_01
+    image: public.ecr.aws/glue/aws-glue-libs:5
     container_name: glue-local
     volumes:
-      - ./src:/home/glue_user/workspace/src
-      - ./tests:/home/glue_user/workspace/tests
-      - ./tests/test_data:/home/glue_user/workspace/data
-      - ~/.aws:/home/glue_user/.aws:ro
-      - ../dist:/home/glue_user/workspace/dist
+      - ./src:/home/hadoop/workspace/src
+      - ./tests:/home/hadoop/workspace/tests
+      - ./tests/test_data:/home/hadoop/workspace/data
+      - ~/.aws:/home/hadoop/.aws:ro
+      - ../dist:/home/hadoop/workspace/dist
+      - ./requirements.txt:/home/hadoop/workspace/requirements.txt
+      - ./log4j-local.properties:/home/hadoop/workspace/log4j-local.properties
     environment:
-      - AWS_PROFILE=${AWS_PROFILE:-default}
       - DISABLE_SSL=true
       - ENVIRONMENT=local
-      - PYTHONPATH=/home/glue_user/workspace/src
-    working_dir: /home/glue_user/workspace
-    command: /bin/bash
+      - PYTHONPATH=/home/hadoop/workspace/src
+    working_dir: /home/hadoop/workspace
+    command: ["-c", "pip install --user -r /home/hadoop/workspace/requirements.txt && echo 'Dependencies installed successfully' && tail -f /dev/null"]
     stdin_open: true
     tty: true
     ports:
@@ -25,25 +24,6 @@ services:
     networks:
       - glue-network
 
-  # Optional: LocalStack for AWS service emulation (if needed for integration tests)
-  # localstack:
-  #   image: localstack/localstack:2.3
-  #   container_name: localstack
-  #   environment:
-  #     - SERVICES=s3,secretsmanager,sqs,sns
-  #     - DEBUG=1
-  #     - DATA_DIR=/tmp/localstack/data
-  #     - PERSISTENCE=1
-  #   ports:
-  #     - "4566:4566"
-  #   volumes:
-  #     - localstack_data:/tmp/localstack
-  #   networks:
-  #     - glue-network
-
 networks:
   glue-network:
     driver: bridge
-
-volumes:
-  localstack_data:

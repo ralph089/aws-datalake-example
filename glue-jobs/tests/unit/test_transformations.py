@@ -1,119 +1,128 @@
 import pytest
-from unittest.mock import Mock
-import pandas as pd
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit
+from chispa import assert_df_equality, assert_column_equality
+
 from transformations.common import (
-    clean_email, standardize_phone, standardize_name, 
-    categorize_amount, add_processing_metadata
+    add_processing_metadata,
+    categorize_amount,
+    clean_email,
+    standardize_name,
+    standardize_phone,
 )
+
 
 @pytest.fixture(scope="session")
 def spark():
     """Create a Spark session for testing"""
-    return SparkSession.builder \
-        .appName("test") \
-        .master("local[2]") \
-        .config("spark.sql.adaptive.enabled", "false") \
+    return (
+        SparkSession.builder.appName("test")
+        .master("local[2]")
+        .config("spark.sql.adaptive.enabled", "false")
         .getOrCreate()
+    )
+
 
 def test_clean_email(spark):
-    """Test email cleaning function"""
-    data = [
-        ("john.doe@example.com",),
-        ("JANE.SMITH@EXAMPLE.COM",),
-        ("invalid-email",),
-        ("",),
-        (None,)
+    """Test email cleaning function using chispa assertions"""
+    input_data = [("john.doe@example.com",), ("JANE.SMITH@EXAMPLE.COM",), ("invalid-email",), ("",), (None,)]
+    input_df = spark.createDataFrame(input_data, ["email"])
+
+    result_df = input_df.withColumn("clean_email", clean_email(col("email")))
+    
+    # Create expected results
+    expected_data = [
+        ("john.doe@example.com", "john.doe@example.com"),
+        ("JANE.SMITH@EXAMPLE.COM", "jane.smith@example.com"), 
+        ("invalid-email", None),  # Invalid email
+        ("", None),  # Empty string
+        (None, None)  # Null
     ]
-    df = spark.createDataFrame(data, ["email"])
+    expected_df = spark.createDataFrame(expected_data, ["email", "clean_email"])
     
-    result_df = df.withColumn("clean_email", clean_email(col("email")))
-    results = result_df.collect()
-    
-    assert results[0]["clean_email"] == "john.doe@example.com"
-    assert results[1]["clean_email"] == "jane.smith@example.com"
-    assert results[2]["clean_email"] is None  # Invalid email
-    assert results[3]["clean_email"] is None  # Empty string
-    assert results[4]["clean_email"] is None  # Null
+    assert_df_equality(result_df, expected_df, ignore_row_order=True)
+
 
 def test_standardize_phone(spark):
-    """Test phone number standardization"""
-    data = [
-        ("5551234567",),
-        ("(555) 123-4567",),
-        ("555.123.4567",),
-        ("1234",),  # Too short
-        (None,)
+    """Test phone number standardization using chispa assertions"""
+    input_data = [("5551234567",), ("(555) 123-4567",), ("555.123.4567",), ("1234",), (None,)]
+    input_df = spark.createDataFrame(input_data, ["phone"])
+
+    result_df = input_df.withColumn("standard_phone", standardize_phone(col("phone")))
+    
+    # Create expected results
+    expected_data = [
+        ("5551234567", "(555) 123-4567"),
+        ("(555) 123-4567", "(555) 123-4567"),
+        ("555.123.4567", "(555) 123-4567"), 
+        ("1234", "1234"),  # Too short, unchanged
+        (None, None)
     ]
-    df = spark.createDataFrame(data, ["phone"])
+    expected_df = spark.createDataFrame(expected_data, ["phone", "standard_phone"])
     
-    result_df = df.withColumn("standard_phone", standardize_phone(col("phone")))
-    results = result_df.collect()
-    
-    assert results[0]["standard_phone"] == "(555) 123-4567"
-    assert results[1]["standard_phone"] == "(555) 123-4567"
-    assert results[2]["standard_phone"] == "(555) 123-4567"
-    assert results[3]["standard_phone"] == "1234"  # Too short, unchanged
-    assert results[4]["standard_phone"] is None
+    assert_df_equality(result_df, expected_df, ignore_row_order=True)
+
 
 def test_standardize_name(spark):
-    """Test name standardization"""
-    data = [
-        ("John Doe",),
-        ("  jane   smith  ",),
-        ("Bob-Johnson",),
-        ("Mary O'Connor",),
-        ("",),
-        (None,)
+    """Test name standardization using chispa assertions"""
+    input_data = [("John Doe",), ("  jane   smith  ",), ("Bob-Johnson",), ("Mary O'Connor",), ("",), (None,)]
+    input_df = spark.createDataFrame(input_data, ["name"])
+
+    result_df = input_df.withColumn("standard_name", standardize_name(col("name")))
+    
+    # Create expected results
+    expected_data = [
+        ("John Doe", "John Doe"),
+        ("  jane   smith  ", "jane smith"),
+        ("Bob-Johnson", "Bob-Johnson"),
+        ("Mary O'Connor", "Mary O'Connor"),
+        ("", None),
+        (None, None)
     ]
-    df = spark.createDataFrame(data, ["name"])
+    expected_df = spark.createDataFrame(expected_data, ["name", "standard_name"])
     
-    result_df = df.withColumn("standard_name", standardize_name(col("name")))
-    results = result_df.collect()
-    
-    assert results[0]["standard_name"] == "John Doe"
-    assert results[1]["standard_name"] == "jane smith"
-    assert results[2]["standard_name"] == "Bob-Johnson"
-    assert results[3]["standard_name"] == "Mary O'Connor"
-    assert results[4]["standard_name"] is None
-    assert results[5]["standard_name"] is None
+    assert_df_equality(result_df, expected_df, ignore_row_order=True)
+
 
 def test_categorize_amount(spark):
-    """Test amount categorization"""
-    data = [
-        (25.0,),
-        (150.0,),
-        (1500.0,),
-        (0.0,)
+    """Test amount categorization using chispa assertions"""
+    input_data = [(25.0,), (150.0,), (1500.0,), (0.0,)]
+    input_df = spark.createDataFrame(input_data, ["amount"])
+
+    result_df = input_df.withColumn("category", categorize_amount(col("amount")))
+    
+    # Create expected results
+    expected_data = [
+        (25.0, "small"),   # < 100
+        (150.0, "medium"), # 100 <= x < 1000
+        (1500.0, "large"), # >= 1000
+        (0.0, "small")     # 0
     ]
-    df = spark.createDataFrame(data, ["amount"])
+    expected_df = spark.createDataFrame(expected_data, ["amount", "category"])
     
-    result_df = df.withColumn("category", categorize_amount(col("amount")))
-    results = result_df.collect()
-    
-    assert results[0]["category"] == "small"   # < 100
-    assert results[1]["category"] == "medium"  # 100 <= x < 1000
-    assert results[2]["category"] == "large"   # >= 1000
-    assert results[3]["category"] == "small"   # 0
+    assert_df_equality(result_df, expected_df, ignore_row_order=True)
+
 
 def test_add_processing_metadata(spark):
-    """Test adding processing metadata"""
-    data = [
-        ("CUST001", "John Doe"),
-        ("CUST002", "Jane Smith")
-    ]
-    df = spark.createDataFrame(data, ["customer_id", "name"])
-    
-    result_df = add_processing_metadata(df, "test_job", "run_123")
-    results = result_df.collect()
-    
+    """Test adding processing metadata using chispa for column verification"""
+    input_data = [("CUST001", "John Doe"), ("CUST002", "Jane Smith")]
+    input_df = spark.createDataFrame(input_data, ["customer_id", "name"])
+
+    result_df = add_processing_metadata(input_df, "test_job", "run_123")
+
     # Check that metadata columns were added
-    assert "processed_timestamp" in result_df.columns
-    assert "processed_by_job" in result_df.columns
-    assert "job_run_id" in result_df.columns
+    expected_columns = ["customer_id", "name", "processed_timestamp", "processed_by_job", "job_run_id"]
+    assert set(result_df.columns) == set(expected_columns)
+
+    # Use chispa to verify specific columns contain expected values
+    job_name_df = result_df.select("processed_by_job").distinct()
+    expected_job_df = spark.createDataFrame([("test_job",)], ["processed_by_job"])
+    assert_df_equality(job_name_df, expected_job_df)
     
-    # Check values
-    assert results[0]["processed_by_job"] == "test_job"
-    assert results[0]["job_run_id"] == "run_123"
-    assert results[0]["processed_timestamp"] is not None
+    run_id_df = result_df.select("job_run_id").distinct()
+    expected_run_df = spark.createDataFrame([("run_123",)], ["job_run_id"])
+    assert_df_equality(run_id_df, expected_run_df)
+    
+    # Verify timestamp column exists and is not null
+    timestamp_count = result_df.filter(col("processed_timestamp").isNotNull()).count()
+    assert timestamp_count == input_df.count()

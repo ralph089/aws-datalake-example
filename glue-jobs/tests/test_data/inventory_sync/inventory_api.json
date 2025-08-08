@@ -1,0 +1,42 @@
+[
+  {
+    "product_id": "PROD001",
+    "location_id": "LOC001",
+    "quantity_on_hand": 150,
+    "reorder_point": 50,
+    "max_stock_level": 500,
+    "quantity_reserved": 10,
+    "last_count_date": "2023-01-15",
+    "cost_per_unit": 25.50
+  },
+  {
+    "product_id": "PROD002",
+    "location_id": "LOC001",
+    "quantity_on_hand": 75,
+    "reorder_point": 25,
+    "max_stock_level": 200,
+    "quantity_reserved": 5,
+    "last_count_date": "2023-01-15",
+    "cost_per_unit": 15.75
+  },
+  {
+    "product_id": "PROD003",
+    "location_id": "LOC001",
+    "quantity_on_hand": 200,
+    "reorder_point": 100,
+    "max_stock_level": 1000,
+    "quantity_reserved": 20,
+    "last_count_date": "2023-01-15",
+    "cost_per_unit": 45.00
+  },
+  {
+    "product_id": "PROD001",
+    "location_id": "LOC002",
+    "quantity_on_hand": 90,
+    "reorder_point": 50,
+    "max_stock_level": 300,
+    "quantity_reserved": 15,
+    "last_count_date": "2023-01-15",
+    "cost_per_unit": 25.50
+  }
+]

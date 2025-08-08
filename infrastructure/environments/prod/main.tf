@@ -27,21 +27,29 @@ module "data_platform" {
   glue_jobs = {
     customer_import = {
       script_location = "s3://glue-scripts-${var.environment}/jobs/customer_import.py"
+      glue_version    = "5.0"
+      python_version  = "3.11"
       max_capacity    = 2
       timeout         = 60
     }
     sales_etl = {
       script_location = "s3://glue-scripts-${var.environment}/jobs/sales_etl.py"
+      glue_version    = "5.0"
+      python_version  = "3.11"
       max_capacity    = 4
       timeout         = 120
     }
     inventory_sync = {
       script_location = "s3://glue-scripts-${var.environment}/jobs/inventory_sync.py"
+      glue_version    = "5.0"
+      python_version  = "3.11"
       max_capacity    = 2
       timeout         = 60
     }
     product_catalog = {
       script_location = "s3://glue-scripts-${var.environment}/jobs/product_catalog.py"
+      glue_version    = "5.0"
+      python_version  = "3.11"
       max_capacity    = 2
       timeout         = 60
     }

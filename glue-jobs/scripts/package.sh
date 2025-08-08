@@ -6,14 +6,14 @@ set -e
 echo "Packaging Glue jobs..."
 
 # Create dist directory
-mkdir -p ../../dist
+mkdir -p ../dist
 
-# Export poetry dependencies
-poetry export -f requirements.txt --output requirements.txt --without-hashes
+# Export uv dependencies
+uv export --format requirements-txt --no-hashes > requirements.txt
 
 # Create utils zip file
 cd src
-zip -r ../../../dist/utils.zip utils transformations validators -x "*/__pycache__/*" "*/.*"
+zip -r ../../dist/utils.zip utils transformations -x "*/__pycache__/*" "*/.*"
 cd ..
 
 echo "Package created: dist/utils.zip"

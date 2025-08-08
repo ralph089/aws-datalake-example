@@ -6,46 +6,74 @@ help: ## Show this help message
 
 setup: ## Install dependencies and setup development environment
 	@echo "Setting up development environment..."
-	cd glue-jobs && poetry install
+	cd glue-jobs && uv sync
 	pre-commit install
 	@echo "✅ Setup completed!"
 
 install-dev: ## Install development dependencies only
-	cd glue-jobs && poetry install --only=dev
+	cd glue-jobs && uv sync --dev
+
 
 check-deps: ## Check for dependency updates
-	cd glue-jobs && poetry show --outdated
+	cd glue-jobs && uv tree --outdated
 
 test: test-unit test-int ## Run all tests
 
 test-unit: ## Run unit tests with coverage
 	@echo "Running unit tests..."
-	cd glue-jobs && poetry run pytest tests/unit -v --cov=src --cov-report=term-missing
+	cd glue-jobs && uv run pytest tests/unit -v --cov=src --cov-report=term-missing
 
 test-int: ## Run integration tests in Docker
 	@echo "Running integration tests..."
-	docker-compose up -d glue
-	@echo "Waiting for container to be ready..."
-	@sleep 10
-	docker exec glue-local pytest /home/glue_user/workspace/tests/integration -v
-	docker-compose down
+	@echo "Generating requirements.txt..."
+	cd glue-jobs && uv export --format requirements-txt --no-hashes --no-editable --dev | grep -v "^\\." > requirements.txt
+	cd glue-jobs && docker-compose up -d glue
+	@echo "Waiting for container startup and dependency installation..."
+	@echo "This may take several minutes for the first run..."
+	@timeout=120; while [ $$timeout -gt 0 ]; do \
+		if docker exec glue-local python -c "import moto; import pytest; import structlog; print('All dependencies ready')" 2>/dev/null; then \
+			echo "✅ Dependencies installation completed"; \
+			break; \
+		fi; \
+		echo "Waiting for dependencies... ($$timeout seconds remaining)"; \
+		sleep 10; \
+		timeout=$$((timeout - 10)); \
+	done; \
+	if [ $$timeout -le 0 ]; then \
+		echo "❌ Timeout waiting for dependencies installation"; \
+		exit 1; \
+	fi
+	@echo "Checking installation progress..."
+	docker logs glue-local | tail -5
+	@echo "Testing container connectivity and Python environment..."
+	docker exec glue-local python -c "print('✅ Container is running and Python works')"
+	docker exec glue-local python -c "import sys; print(f'Python version: {sys.version}')"
+	docker exec glue-local python -c "import pyspark; print(f'✅ PySpark available: {pyspark.__version__}')"
+	@echo "Testing installed dependencies..."
+	docker exec glue-local python -c "import moto; print('✅ Moto available for testing')"
+	docker exec glue-local python -c "import pytest; print('✅ Pytest available')"
+	docker exec glue-local python -c "import structlog; print('✅ Structlog available')"
+	@echo "Running full integration test suite..."
+	docker exec glue-local pytest /home/hadoop/workspace/tests/integration -v --tb=short --with-integration
+	@echo "✅ All integration tests completed!"
+	cd glue-jobs && docker-compose down
 
 test-watch: ## Run tests in watch mode
-	cd glue-jobs && poetry run pytest-watch tests/unit
+	cd glue-jobs && uv run pytest-watch tests/unit
 
 lint: ## Run linting checks
 	@echo "Running linting checks..."
-	cd glue-jobs && poetry run ruff check .
+	cd glue-jobs && uv run ruff check .
 	@echo "✅ Linting passed!"
 
 format: ## Format code with black and ruff
 	@echo "Formatting code..."
-	cd glue-jobs && poetry run black .
-	cd glue-jobs && poetry run ruff format .
+	cd glue-jobs && uv run black .
+	cd glue-jobs && uv run ruff format .
 	@echo "✅ Code formatted!"
 
 type-check: ## Run type checking with mypy
-	cd glue-jobs && poetry run mypy src/
+	cd glue-jobs && uv run mypy src/
 
 pre-commit: ## Run all pre-commit hooks
 	pre-commit run --all-files
@@ -61,18 +89,23 @@ validate-terraform: ## Validate Terraform configurations
 	done
 	@echo "✅ Terraform validation passed!"
 
-run-local: ## Run job locally (usage: make run-local JOB=customer_import)
+run-local: ## Run job locally (usage: make run-local JOB=customer_import, add VERBOSE=true for full output)
 	@if [ -z "$(JOB)" ]; then \
 		echo "❌ Error: Please specify JOB parameter"; \
 		echo "Usage: make run-local JOB=customer_import"; \
+		echo "       make run-local JOB=customer_import VERBOSE=true  # for debugging"; \
 		exit 1; \
 	fi
-	@echo "Running $(JOB) locally..."
-	@$(MAKE) package
-	docker-compose up -d glue
-	@echo "Waiting for container to be ready..."
-	@sleep 10
-	./glue-jobs/scripts/run_local.sh $(JOB)
+	@if [ "$(VERBOSE)" = "true" ]; then \
+		echo "Running $(JOB) locally in verbose mode..."; \
+		echo "Generating requirements.txt..."; \
+	else \
+		echo "🔧 Preparing job: $(JOB)"; \
+	fi
+	@cd glue-jobs && uv export --format requirements-txt --no-hashes --no-editable --dev | sed '/^\.$$/d' > requirements.txt $(if $(filter-out true,$(VERBOSE)),2>/dev/null)
+	@$(MAKE) package $(if $(filter-out true,$(VERBOSE)),>/dev/null 2>&1)
+	@if [ "$(VERBOSE)" != "true" ]; then echo "📦 Package ready"; fi
+	@VERBOSE=$(VERBOSE) ./glue-jobs/scripts/run_local.sh $(JOB)
 
 run-all-local: ## Run all jobs locally for testing
 	@echo "Running all jobs locally..."
@@ -82,10 +115,10 @@ run-all-local: ## Run all jobs locally for testing
 	@$(MAKE) run-local JOB=product_catalog
 
 package: ## Package jobs for deployment
-	@echo "Packaging Glue jobs..."
+	@if [ "$(VERBOSE)" = "true" ]; then echo "Packaging Glue jobs..."; fi
 	@mkdir -p dist
-	cd glue-jobs && ./scripts/package.sh
-	@echo "✅ Package created in dist/utils.zip"
+	@cd glue-jobs && ./scripts/package.sh $(if $(filter-out true,$(VERBOSE)),>/dev/null 2>&1)
+	@if [ "$(VERBOSE)" = "true" ]; then echo "✅ Package created in dist/utils.zip"; fi
 
 deploy-infra: ## Deploy infrastructure (usage: make deploy-infra ENV=dev ACTION=plan)
 	@if [ -z "$(ENV)" ]; then \
@@ -143,17 +176,17 @@ clean: ## Clean up generated files and containers
 	rm -rf glue-jobs/dist/
 	rm -rf glue-jobs/.coverage
 	rm -rf glue-jobs/requirements.txt
-	docker-compose down --volumes --remove-orphans 2>/dev/null || true
+	cd glue-jobs && docker-compose down --volumes --remove-orphans 2>/dev/null || true
 	@echo "✅ Cleanup completed!"
 
 docker-up: ## Start Docker containers
-	docker-compose up -d
+	cd glue-jobs && docker-compose up -d
 
 docker-down: ## Stop Docker containers
-	docker-compose down
+	cd glue-jobs && docker-compose down
 
 docker-logs: ## View Docker container logs
-	docker-compose logs -f glue
+	cd glue-jobs && docker-compose logs -f glue
 
 docker-shell: ## Open shell in Glue container
 	docker exec -it glue-local /bin/bash
@@ -180,8 +213,8 @@ health-check: ## Run basic health checks
 	@aws --version >/dev/null && echo "  AWS CLI is available" || echo "  ❌ AWS CLI not available"
 	@echo "✅ Checking Terraform..."
 	@terraform -version >/dev/null && echo "  Terraform is available" || echo "  ❌ Terraform not available"
-	@echo "✅ Checking Poetry..."
-	@poetry --version >/dev/null && echo "  Poetry is available" || echo "  ❌ Poetry not available"
+	@echo "✅ Checking UV..."
+	@uv --version >/dev/null && echo "  UV is available" || echo "  ❌ UV not available"
 	@echo "✅ Checking Python..."
 	@python3 --version >/dev/null && echo "  Python 3 is available" || echo "  ❌ Python 3 not available"
 

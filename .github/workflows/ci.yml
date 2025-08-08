@@ -34,31 +34,81 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+      
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       
-      - name: Install Poetry
-        run: pip install poetry
-      
       - name: Install dependencies
-        run: cd glue-jobs && poetry install
+        run: cd glue-jobs && uv sync --dev
       
       - name: Run linter
         run: |
           cd glue-jobs
-          poetry run ruff check .
-          poetry run black --check .
+          uv run ruff check .
+          uv run black --check .
       
       - name: Run type checker
-        run: cd glue-jobs && poetry run mypy src/
+        run: cd glue-jobs && uv run mypy src/
       
       - name: Run unit tests
-        run: cd glue-jobs && poetry run pytest tests/unit -v --cov=src --cov-report=term-missing
+        run: cd glue-jobs && uv run pytest tests/unit -v --cov=src --cov-report=term-missing
       
       - name: Build package
         run: |
           cd glue-jobs
-          poetry build
+          uv build
           cd src && zip -r ../../dist/utils.zip utils transformations validators
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: test-glue-jobs
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: cd glue-jobs && uv sync --dev
+      
+      - name: Create empty AWS config for Docker
+        run: |
+          mkdir -p ~/.aws
+          echo -e "[default]\nregion = us-east-1" > ~/.aws/config
+          echo -e "[default]\naws_access_key_id = test\naws_secret_access_key = test" > ~/.aws/credentials
+      
+      - name: Setup Docker services
+        run: |
+          cd glue-jobs
+          docker-compose up -d
+          sleep 45  # Wait for services to be ready
+      
+      - name: Wait for Glue container and install dependencies
+        run: |
+          cd glue-jobs
+          docker-compose exec -T glue bash -c "pip install --user -r /home/hadoop/workspace/requirements.txt"
+          docker-compose exec -T glue python -c "print('✅ Glue container ready')"
+      
+      - name: Run integration tests
+        run: |
+          cd glue-jobs
+          docker-compose exec -T glue pytest /home/hadoop/workspace/tests/integration -v --tb=short --with-integration
+      
+      - name: Cleanup Docker services
+        if: always()
+        run: |
+          cd glue-jobs
+          docker-compose down -v
