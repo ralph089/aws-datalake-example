@@ -42,12 +42,21 @@ class BaseGlueJob(ABC):
         self.environment = args.get("env", "local")
         self.job_run_id = args.get("JOB_RUN_ID") or f"local-{datetime.now().isoformat()}"
 
+        # S3 event detection - check if job was triggered by S3 event
+        self.source_bucket = args.get("bucket")
+        self.source_object_key = args.get("object_key")
+        self.is_event_triggered = bool(self.source_bucket and self.source_object_key)
+        self.trigger_type = "s3_event" if self.is_event_triggered else "scheduled"
+
         # Setup structured logging
         self.logger = setup_logging(job_name, self.environment)
         self.logger = self.logger.bind(
             job_name=job_name,
             environment=self.environment,
             job_run_id=self.job_run_id,
+            trigger_type=self.trigger_type,
+            source_bucket=self.source_bucket,
+            source_object_key=self.source_object_key,
             trace_id=None,
         )
 
@@ -127,9 +136,11 @@ class BaseGlueJob(ABC):
     # Smart Data Loading Methods
     def load_data(self, data_type: str, fallback_path: str | None = None) -> DataFrame:
         """
-        Smart data loader that auto-detects file format and environment.
+        Smart data loader that auto-detects trigger type and file format.
         
-        Convention: local/data/{job_name}/{data_type}.{json|csv}
+        Event-triggered: Loads specific file from S3 event (bucket/object_key)
+        Scheduled: Loads directory data using existing logic
+        Local: Uses test data structures
         
         Args:
             data_type: Data identifier (e.g., 'api_data', 'inventory_api', 'customers')
@@ -140,65 +151,104 @@ class BaseGlueJob(ABC):
         """
         from pathlib import Path
         
+        # Local environment processing
         if self.environment == "local":
-            # Try test data structure first (for tests)
-            test_path = Path("tests/test_data") / self.job_name
-            
-            # Try JSON first, then CSV in test structure
-            for ext in ["json", "csv"]:
-                file_path = test_path / f"{data_type}.{ext}"
-                if file_path.exists():
-                    if ext == "json":
-                        df = self.spark.read.option("multiline", "true").json(str(file_path))
-                    else:
-                        df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(str(file_path))
-                    
-                    self.logger.info("loaded_test_data", 
-                                   file=str(file_path), 
-                                   row_count=df.count(),
-                                   format=ext)
-                    return df
-            
-            # Try local data structure (for production local dev)
-            local_path = Path("local/data") / self.job_name
-            
-            # Try JSON first, then CSV
-            for ext in ["json", "csv"]:
-                file_path = local_path / f"{data_type}.{ext}"
-                if file_path.exists():
-                    if ext == "json":
-                        df = self.spark.read.option("multiline", "true").json(str(file_path))
-                    else:
-                        df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(str(file_path))
-                    
-                    self.logger.info("loaded_local_data", 
-                                   file=str(file_path), 
-                                   row_count=df.count(),
-                                   format=ext)
-                    return df
-            
-            # Use fallback if provided
-            if fallback_path and Path(fallback_path).exists():
-                ext = Path(fallback_path).suffix[1:]  # Remove the dot
-                if ext == "json":
-                    df = self.spark.read.option("multiline", "true").json(fallback_path)
-                else:
-                    df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(fallback_path)
-                
-                self.logger.info("loaded_fallback_data", 
-                               file=fallback_path, 
+            return self._load_local_data(data_type, fallback_path)
+        
+        # Remote environment - check trigger type
+        if self.is_event_triggered:
+            # Event-triggered: load specific file from S3 event
+            return self._load_event_file()
+        else:
+            # Scheduled: load directory data (existing behavior)
+            return self._load_directory_data(data_type)
+
+    def _load_local_data(self, data_type: str, fallback_path: str | None = None) -> DataFrame:
+        """Load data for local development environment"""
+        from pathlib import Path
+        
+        # Try test data structure first (for tests)
+        test_path = Path("tests/test_data") / self.job_name
+        
+        # Try JSON first, then CSV in test structure
+        for ext in ["json", "csv"]:
+            file_path = test_path / f"{data_type}.{ext}"
+            if file_path.exists():
+                df = self._read_file_by_extension(str(file_path), ext)
+                self.logger.info("loaded_test_data", 
+                               file=str(file_path), 
                                row_count=df.count(),
                                format=ext)
                 return df
-            
-            raise FileNotFoundError(f"No local data found for {data_type} in {test_path} or {local_path}")
         
-        else:
-            # Remote environment - load from S3
-            s3_path = f"s3://data-lake-{self.environment}-silver/{data_type}/"
-            df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(s3_path)
-            self.logger.info("loaded_s3_data", path=s3_path, row_count=df.count())
+        # Try local data structure (for production local dev)
+        local_path = Path("local/data") / self.job_name
+        
+        # Try JSON first, then CSV
+        for ext in ["json", "csv"]:
+            file_path = local_path / f"{data_type}.{ext}"
+            if file_path.exists():
+                df = self._read_file_by_extension(str(file_path), ext)
+                self.logger.info("loaded_local_data", 
+                               file=str(file_path), 
+                               row_count=df.count(),
+                               format=ext)
+                return df
+        
+        # Use fallback if provided
+        if fallback_path and Path(fallback_path).exists():
+            ext = Path(fallback_path).suffix[1:]  # Remove the dot
+            df = self._read_file_by_extension(fallback_path, ext)
+            self.logger.info("loaded_fallback_data", 
+                           file=fallback_path, 
+                           row_count=df.count(),
+                           format=ext)
             return df
+        
+        raise FileNotFoundError(f"No local data found for {data_type} in {test_path} or {local_path}")
+
+    def _load_event_file(self) -> DataFrame:
+        """Load specific file from S3 event trigger"""
+        s3_path = f"s3://{self.source_bucket}/{self.source_object_key}"
+        
+        # Auto-detect file format from extension
+        file_ext = self.source_object_key.split('.')[-1].lower()
+        
+        df = self._read_file_by_extension(s3_path, file_ext)
+        
+        self.logger.info("loaded_event_file", 
+                       path=s3_path, 
+                       row_count=df.count(),
+                       file_format=file_ext,
+                       trigger_type="s3_event")
+        return df
+
+    def _load_directory_data(self, data_type: str) -> DataFrame:
+        """Load directory data for scheduled processing (existing behavior)"""
+        s3_path = f"s3://data-lake-{self.environment}-bronze/{data_type}/"
+        
+        # Default to CSV for directory loading (existing behavior)
+        df = self.spark.read.option("header", "true").option("inferSchema", "true").csv(s3_path)
+        
+        self.logger.info("loaded_directory_data", 
+                       path=s3_path, 
+                       row_count=df.count(),
+                       trigger_type="scheduled")
+        return df
+
+    def _read_file_by_extension(self, file_path: str, file_ext: str) -> DataFrame:
+        """Read file based on extension with consistent options"""
+        if file_ext == "json":
+            return self.spark.read.option("multiline", "true").json(file_path)
+        elif file_ext == "csv":
+            return self.spark.read.option("header", "true").option("inferSchema", "true").csv(file_path)
+        else:
+            # Default to CSV for unknown extensions
+            self.logger.warning("unknown_file_extension", 
+                              extension=file_ext, 
+                              path=file_path, 
+                              defaulting_to="csv")
+            return self.spark.read.option("header", "true").option("inferSchema", "true").csv(file_path)
 
     def load_api_data(self, data_type: str = "api_data") -> DataFrame:
         """
@@ -291,7 +341,13 @@ class BaseGlueJob(ABC):
     def run(self) -> None:
         """Main ETL pipeline execution with transactional validation"""
         try:
-            self.logger.info("job_started")
+            if self.is_event_triggered:
+                self.logger.info("job_started", 
+                               trigger_type="s3_event",
+                               source_file=f"s3://{self.source_bucket}/{self.source_object_key}")
+            else:
+                self.logger.info("job_started", 
+                               trigger_type="scheduled")
 
             # Start audit trail
             self.audit_tracker.start_job()

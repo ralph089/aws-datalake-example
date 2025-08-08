@@ -59,6 +59,19 @@ resource "aws_cloudwatch_event_target" "s3_event_targets" {
   arn       = each.value.target_arn
 
   role_arn = aws_iam_role.eventbridge.arn
+
+  # Transform S3 event details into Glue job arguments
+  input_transformer {
+    input_paths = {
+      bucket = "$.detail.bucket.name"
+      key    = "$.detail.object.key"
+    }
+    input_template = jsonencode({
+      "--bucket"     = "<bucket>"
+      "--object_key" = "<key>"
+      "--env"        = var.environment
+    })
+  }
 }
 
 resource "aws_iam_role" "eventbridge" {

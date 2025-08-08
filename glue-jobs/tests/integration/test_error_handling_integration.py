@@ -14,8 +14,10 @@ class TestErrorHandlingIntegration:
     """Integration tests for error handling and DLQ functionality"""
 
     @pytest.mark.integration
-    def test_job_failure_triggers_dlq_and_notifications(self, mock_failure_context, customer_factory, spark_factory, job_factory):
+    def test_job_failure_triggers_dlq_and_notifications(self, mock_failure_context, job_factory):
         """Test that job failures properly trigger DLQ messages and failure notifications"""
+        from tests.factories import SparkDataFrameFactory
+        
         with mock_failure_context as mocks:
             # Create a job that will fail during transform
             job = job_factory.customer_import("failing_job", "test-failure-123")
@@ -24,7 +26,7 @@ class TestErrorHandlingIntegration:
             # Mock extract to return valid data using factory-boy
             def mock_extract():
                 # Create minimal valid data for extract phase using factory-boy
-                return spark_factory.create_customer_df(spark, count=1)
+                return SparkDataFrameFactory.create_customer_df(spark, count=1)
 
             job.extract = mock_extract
 
@@ -58,8 +60,10 @@ class TestErrorHandlingIntegration:
             assert "Simulated transform failure" in failure_call_args["error"]
 
     @pytest.mark.integration
-    def test_job_success_triggers_success_notification(self, mock_job_context, spark_factory, job_factory):
+    def test_job_success_triggers_success_notification(self, mock_job_context, job_factory):
         """Test that successful jobs trigger success notifications and complete audit trail"""
+        from tests.factories import SparkDataFrameFactory
+        
         with mock_job_context as mocks:
             # Create a job with simple successful implementation
             job = job_factory.customer_import("successful_job", "test-success-123")
@@ -67,7 +71,7 @@ class TestErrorHandlingIntegration:
 
             # Mock all phases to be successful using factory-boy
             def mock_extract():
-                return spark_factory.create_customer_df(spark, count=1)
+                return SparkDataFrameFactory.create_customer_df(spark, count=1)
 
             def mock_transform(df):
                 # Simple transformation - just add a column
@@ -106,8 +110,10 @@ class TestErrorHandlingIntegration:
             assert success_call_args["output_paths"] == ["s3://test-bucket/output/"]
 
     @pytest.mark.integration
-    def test_validation_failure_triggers_error_handling(self, mock_failure_context, spark_factory, job_factory):
+    def test_validation_failure_triggers_error_handling(self, mock_failure_context, job_factory):
         """Test that validation failures are properly handled"""
+        from tests.factories import SparkDataFrameFactory
+        
         with mock_failure_context as mocks:
             # Create a job that will fail validation
             job = job_factory.customer_import("validation_failing_job", "test-validation-123")
@@ -115,7 +121,7 @@ class TestErrorHandlingIntegration:
 
             # Mock phases using factory-boy
             def mock_extract():
-                return spark_factory.create_customer_df(spark, count=1)
+                return SparkDataFrameFactory.create_customer_df(spark, count=1)
 
             def mock_transform(df):
                 return df.withColumn("processed", lit(True))
@@ -159,15 +165,17 @@ class TestErrorHandlingIntegration:
             mocks["notifications"].send_failure_notification.assert_called_once()
 
     @pytest.mark.integration
-    def test_load_phase_failure_handling(self, mock_failure_context, spark_factory, job_factory):
+    def test_load_phase_failure_handling(self, mock_failure_context, job_factory):
         """Test error handling when load phase fails"""
+        from tests.factories import SparkDataFrameFactory
+        
         with mock_failure_context as mocks:
             job = job_factory.customer_import("load_failing_job", "test-load-123")
             spark = job.spark
 
             # Mock successful phases except load using factory-boy
             def mock_extract():
-                return spark_factory.create_customer_df(spark, count=1)
+                return SparkDataFrameFactory.create_customer_df(spark, count=1)
 
             def mock_transform(df):
                 return df.withColumn("processed", lit(True))
@@ -220,21 +228,17 @@ class TestErrorHandlingIntegration:
         # Let's create a proper separate test method
 
     @pytest.mark.integration
-    def test_transform_phase_failure_handling(self, mock_failure_context, customer_builder, job_factory):
+    def test_transform_phase_failure_handling(self, mock_failure_context, job_factory):
         """Test error handling during transform phase with tracing"""
+        from tests.factories import SparkDataFrameFactory
+        
         with mock_failure_context as mocks:
             job = job_factory.customer_import("transform_failing_job", "test-transform-456")
             spark = job.spark
 
             # Mock extract to succeed, transform to fail
             def mock_extract():
-                data = (
-                    customer_builder()
-                    .add_valid_customer("CUST001", "John", "Doe", "john@example.com", "555-1234", "2023-01-15")
-                    .build_tuples()
-                )
-                schema = customer_builder().build_schema_columns()
-                return spark.createDataFrame(data, schema)
+                return SparkDataFrameFactory.create_customer_df(spark, count=1)
 
             def failing_transform(df):
                 raise RuntimeError("Transform error for testing")
@@ -256,14 +260,13 @@ class TestErrorHandlingIntegration:
     @pytest.mark.skip(reason="Complex concurrent failure test - not critical for core functionality")
     @pytest.mark.integration
     def test_concurrent_job_failure_isolation(
-        self, reusable_failure_mocks, reusable_job_mocks, customer_builder, job_factory
+        self, reusable_failure_mocks, reusable_job_mocks, job_factory
     ):
         """Test that failures in one job don't affect the error handling of another"""
         # This test simulates running two jobs where one fails and one succeeds
         # to ensure error handling is properly isolated
-
+        from tests.factories import SparkDataFrameFactory
         from contextlib import ExitStack
-
         from .test_job_runner import MockConfigFactory
 
         # Create isolated mock contexts for each job
@@ -295,13 +298,7 @@ class TestErrorHandlingIntegration:
             job2 = job_factory.customer_import("successful_job_2", "test-success-2")
 
             def mock_extract():
-                data = (
-                    customer_builder()
-                    .add_valid_customer("CUST001", "John", "Doe", "john@example.com", "555-1234", "2023-01-15")
-                    .build_tuples()
-                )
-                schema = customer_builder().build_schema_columns()
-                return spark.createDataFrame(data, schema)
+                return SparkDataFrameFactory.create_customer_df(spark, count=1)
 
             def mock_transform(df):
                 return df.withColumn("processed", lit(True))

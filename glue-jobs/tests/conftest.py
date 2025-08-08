@@ -66,46 +66,10 @@ def sns_client(aws_credentials):
         yield client
 
 
-@pytest.fixture
-def sample_customer_data():
-    """Sample customer data for testing using factory-boy"""
-    from tests.factories import CustomerFactory
-
-    return [
-        CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
-                       email="john.doe@example.com", phone="5551234567"),
-        CustomerFactory(customer_id="CUST002", first_name="Jane", last_name="Smith",
-                       email="jane.smith@example.com", phone="(555) 987-6543", 
-                       registration_date="2023-02-20"),
-        CustomerFactory.with_invalid_email(customer_id="CUST003")
-    ]
-
-
-@pytest.fixture
-def sample_sales_data():
-    """Sample sales data for testing using factory-boy"""
-    from tests.factories import SalesTransactionFactory
-
-    return [
-        SalesTransactionFactory(transaction_id="TXN001", customer_id="CUST001", 
-                               product_id="PROD001", quantity=2, unit_price=29.99,
-                               transaction_date="2023-01-15"),
-        SalesTransactionFactory(transaction_id="TXN002", customer_id="CUST002",
-                               product_id="PROD002", quantity=1, unit_price=149.99,
-                               transaction_date="2023-01-16"),
-        SalesTransactionFactory.with_invalid_quantity(transaction_id="TXN003")
-    ]
-
-
-@pytest.fixture
-def sample_inventory_data():
-    """Sample inventory data for testing using factory-boy"""
-    from tests.factories import InventoryFactory
-
-    return [
-        InventoryFactory.well_stocked(product_id="PROD001", location_id="LOC001"),
-        InventoryFactory.low_stock(product_id="PROD002", location_id="LOC001")
-    ]
+# Note: Sample data fixtures can be replaced with direct factory imports
+# Example usage in tests:
+# from tests.factories import CustomerFactory
+# customers = CustomerFactory.build_batch(3)
 
 
 # Centralized Mock Management Fixtures
@@ -200,42 +164,8 @@ def mock_failure_context(failure_mocks):
     return MockJobContext(failure_mocks)
 
 
-# Factory Fixtures (replaces custom data builders)
-
-
-@pytest.fixture
-def customer_factory():
-    """Factory-boy CustomerFactory for test convenience."""
-    from tests.factories import CustomerFactory
-    return CustomerFactory
-
-
-@pytest.fixture
-def sales_factory():
-    """Factory-boy SalesTransactionFactory for test convenience."""
-    from tests.factories import SalesTransactionFactory
-    return SalesTransactionFactory
-
-
-@pytest.fixture
-def inventory_factory():
-    """Factory-boy InventoryFactory for test convenience."""
-    from tests.factories import InventoryFactory
-    return InventoryFactory
-
-
-@pytest.fixture
-def spark_factory():
-    """SparkDataFrameFactory for creating test DataFrames."""
-    from tests.factories import SparkDataFrameFactory
-    return SparkDataFrameFactory
-
-
-@pytest.fixture
-def scenario_factory():
-    """ScenarioFactory for complex test scenarios."""
-    from tests.factories import ScenarioFactory
-    return ScenarioFactory
+# Note: No factory fixtures needed - import factories directly in tests
+# from tests.factories import CustomerFactory, SalesTransactionFactory, etc.
 
 
 # Job Factory Fixtures

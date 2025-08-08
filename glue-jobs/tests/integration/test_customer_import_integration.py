@@ -75,7 +75,7 @@ class TestCustomerImportIntegration:
         assert "email_domain" in result["columns"], "email_domain derived column missing"
 
     @pytest.mark.integration
-    def test_customer_import_data_transformations(self, mock_job_context, customer_factory, spark_factory, job_factory):
+    def test_customer_import_data_transformations(self, mock_job_context, job_factory):
         """
         Test comprehensive data transformation logic for customer import using factory-boy.
 
@@ -87,18 +87,21 @@ class TestCustomerImportIntegration:
         5. Derived field generation (full_name, email_domain)
         6. Processing metadata addition (timestamps, job tracking)
         """
+        # Import factory directly
+        from tests.factories import CustomerFactory
+        
         # Create test data with known transformation scenarios using factory-boy
         test_customers = [
             # Standard record with uppercase email - should be normalized
-            customer_factory(customer_id="CUST001", first_name="John", last_name="Doe", 
+            CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
                            email="JOHN.DOE@EXAMPLE.COM", phone="5551234567", registration_date="2023-01-15"),
             # Already clean record - should pass through unchanged
-            customer_factory(customer_id="CUST002", first_name="Jane", last_name="Smith",
+            CustomerFactory(customer_id="CUST002", first_name="Jane", last_name="Smith",
                            email="jane.smith@example.com", phone="(555) 987-6543", registration_date="2023-02-20"),
             # Invalid email - should be filtered out during transformation
-            customer_factory.with_invalid_email(customer_id="CUST003"),
+            CustomerFactory.with_invalid_email(customer_id="CUST003"),
             # Names with whitespace and mixed case - should be standardized
-            customer_factory(customer_id="CUST004", first_name="  alice  ", last_name="  WILLIAMS  ",
+            CustomerFactory(customer_id="CUST004", first_name="  alice  ", last_name="  WILLIAMS  ",
                            email="alice.williams@example.com", phone="555.123.4567", registration_date="2023-04-05")
         ]
 
@@ -172,10 +175,13 @@ class TestCustomerImportIntegration:
             )
 
     @pytest.mark.integration
-    def test_customer_import_validation_failures(self, mock_job_context, customer_factory, job_factory):
+    def test_customer_import_validation_failures(self, mock_job_context, job_factory):
         """Test validation failure scenarios using factory-boy"""
+        # Import factory directly
+        from tests.factories import CustomerFactory
+        
         # Create data with validation issues using factory-boy
-        base_customer = customer_factory(customer_id="CUST001", first_name="John", last_name="Doe", 
+        base_customer = CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
                                        email="john.doe@example.com", phone="5551234567", registration_date="2023-01-15")
         
         # Create duplicate customer
@@ -199,11 +205,13 @@ class TestCustomerImportIntegration:
             assert validation_result is False, "Validation should fail for duplicate emails"
 
     @pytest.mark.integration
-    def test_customer_import_empty_dataset(self, mock_job_context, spark_factory, job_factory):
-        """Test handling of empty dataset using spark_factory"""
-        # Create empty DataFrame with correct schema using spark_factory
+    def test_customer_import_empty_dataset(self, mock_job_context, job_factory):
+        """Test handling of empty dataset using SparkDataFrameFactory"""
+        from tests.factories import SparkDataFrameFactory
+        
+        # Create empty DataFrame with correct schema using SparkDataFrameFactory
         spark = job_factory.runner.spark
-        df = spark_factory.create_customer_df(spark, count=0)  # Empty DataFrame with correct schema
+        df = SparkDataFrameFactory.create_customer_df(spark, count=0)  # Empty DataFrame with correct schema
 
         # Use centralized mock context manager
         with mock_job_context as mocks:
@@ -218,14 +226,16 @@ class TestCustomerImportIntegration:
 
     @pytest.mark.integration
     def test_customer_import_local_file_output(
-        self, mock_job_context, customer_factory, job_factory, runner
+        self, mock_job_context, job_factory, runner
     ):
         """Test that local output files are created correctly using factory-boy"""
+        from tests.factories import CustomerFactory
+        
         # Create temporary directory for output
         output_dir = runner.get_temp_dir()
 
         # Create minimal test data using factory-boy
-        test_customer = customer_factory(customer_id="CUST001", first_name="John", last_name="Doe", 
+        test_customer = CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
                                        email="john.doe@example.com", phone="5551234567", registration_date="2023-01-15")
         
         spark = job_factory.runner.spark
@@ -263,9 +273,11 @@ class TestCustomerImportIntegration:
     @pytest.mark.skip(reason="DataQualityChecker class does not exist in customer_import module")
     @pytest.mark.integration
     def test_customer_import_with_quality_checker(
-        self, mock_job_context, customer_factory, job_factory, mocker
+        self, mock_job_context, job_factory, mocker
     ):
         """Test integration with DataQualityChecker using pytest-mock"""
+        from tests.factories import CustomerFactory
+        
         # Setup mock quality checker using pytest-mock
         mock_quality_checker = mocker.patch("jobs.customer_import.DataQualityChecker")
         mock_checker_instance = mocker.MagicMock()
@@ -274,7 +286,7 @@ class TestCustomerImportIntegration:
         mock_checker_instance.check_patterns.return_value = {"passed": True}
 
         # Create test data using factory-boy
-        test_customer = customer_factory(customer_id="CUST001", first_name="John", last_name="Doe", 
+        test_customer = CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
                                        email="john.doe@example.com", phone="5551234567", registration_date="2023-01-15")
         
         spark = job_factory.runner.spark
