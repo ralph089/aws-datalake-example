@@ -181,6 +181,7 @@ def job_factory():
             job = job_factory.customer_import("test_job_name")
             # Job is pre-configured with runner's Spark session
     """
+    from jobs.api_data_fetch import APIDataFetchJob
     from jobs.customer_import import CustomerImportJob
     from jobs.inventory_sync import InventorySyncJob
     from jobs.sales_etl import SalesETLJob
@@ -204,6 +205,20 @@ def job_factory():
         def inventory_sync(self, job_name="test_inventory_job", run_id=None):
             run_id = run_id or f"test-{job_name}-123"
             job = InventorySyncJob(job_name, {"env": "local", "JOB_RUN_ID": run_id})
+            job.spark = self.runner.spark
+            return job
+
+        def api_data_fetch(self, job_name="test_api_job", run_id=None):
+            run_id = run_id or f"test-{job_name}-123"
+            job = APIDataFetchJob(job_name, {"env": "local", "JOB_RUN_ID": run_id})
+            job.spark = self.runner.spark
+            return job
+
+        def create_job(self, job_class, job_name, run_id, args=None):
+            """Generic job creation method"""
+            args = args or {}
+            full_args = {"env": "local", "JOB_RUN_ID": run_id, **args}
+            job = job_class(job_name, full_args)
             job.spark = self.runner.spark
             return job
 

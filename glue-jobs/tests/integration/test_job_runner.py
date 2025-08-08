@@ -103,8 +103,15 @@ class IntegrationTestRunner:
             mock_logging.return_value = mock_logger
             mock_logger.bind.return_value = mock_logger
 
-            # Instantiate and run job
-            job = job_class(job_class.__name__, test_args)
+            # Instantiate and run job with proper job name mapping
+            job_name_mapping = {
+                "APIDataFetchJob": "api_data_fetch",
+                "CustomerImportJob": "customer_import", 
+                "SalesETLJob": "sales_etl",
+                "InventorySyncJob": "inventory_sync"
+            }
+            job_name = job_name_mapping.get(job_class.__name__, job_class.__name__)
+            job = job_class(job_name, test_args)
             job.spark = spark  # Use our test spark session
 
             # Execute the job lifecycle

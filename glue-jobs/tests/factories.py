@@ -117,8 +117,19 @@ class SparkDataFrameFactory:
     @staticmethod
     def create_customer_df(spark, count=5, **factory_kwargs):
         """Create customer DataFrame using CustomerFactory."""
+        from pyspark.sql.types import StructType, StructField, StringType
+        
+        # Define explicit schema for empty DataFrame support
+        schema = StructType([
+            StructField("customer_id", StringType(), True),
+            StructField("first_name", StringType(), True),
+            StructField("last_name", StringType(), True),
+            StructField("email", StringType(), True),
+            StructField("phone", StringType(), True),
+            StructField("registration_date", StringType(), True),
+        ])
+        
         customers = CustomerFactory.build_batch(count, **factory_kwargs)
-        schema = ["customer_id", "first_name", "last_name", "email", "phone", "registration_date"]
         data = [(c["customer_id"], c["first_name"], c["last_name"], c["email"], c["phone"], str(c["registration_date"])) 
                 for c in customers]
         return spark.createDataFrame(data, schema)
@@ -126,8 +137,20 @@ class SparkDataFrameFactory:
     @staticmethod
     def create_sales_df(spark, count=5, **factory_kwargs):
         """Create sales DataFrame using SalesTransactionFactory."""
+        from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType
+        
+        # Define explicit schema for empty DataFrame support
+        schema = StructType([
+            StructField("transaction_id", StringType(), True),
+            StructField("customer_id", StringType(), True),
+            StructField("product_id", StringType(), True),
+            StructField("quantity", IntegerType(), True),
+            StructField("unit_price", DoubleType(), True),
+            StructField("total_amount", DoubleType(), True),
+            StructField("transaction_date", StringType(), True),
+        ])
+        
         transactions = SalesTransactionFactory.build_batch(count, **factory_kwargs)
-        schema = ["transaction_id", "customer_id", "product_id", "quantity", "unit_price", "total_amount", "transaction_date"]
         data = [(t["transaction_id"], t["customer_id"], t["product_id"], t["quantity"], 
                 float(t["unit_price"]), t["total_amount"], str(t["transaction_date"]))
                 for t in transactions]
@@ -136,8 +159,19 @@ class SparkDataFrameFactory:
     @staticmethod
     def create_inventory_df(spark, count=5, **factory_kwargs):
         """Create inventory DataFrame using InventoryFactory."""
+        from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+        
+        # Define explicit schema for empty DataFrame support
+        schema = StructType([
+            StructField("product_id", StringType(), True),
+            StructField("location_id", StringType(), True),
+            StructField("quantity_on_hand", IntegerType(), True),
+            StructField("reorder_point", IntegerType(), True),
+            StructField("max_stock_level", IntegerType(), True),
+            StructField("last_updated", StringType(), True),
+        ])
+        
         inventory = InventoryFactory.build_batch(count, **factory_kwargs)
-        schema = ["product_id", "location_id", "quantity_on_hand", "reorder_point", "max_stock_level", "last_updated"]
         data = [(i["product_id"], i["location_id"], i["quantity_on_hand"], 
                 i["reorder_point"], i["max_stock_level"], str(i["last_updated"]))
                 for i in inventory]

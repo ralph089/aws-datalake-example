@@ -75,14 +75,13 @@ class TestAPIDataFetchIntegration:
 
         return [page_1_response, page_2_response]
 
-    @pytest.mark.integration
     def test_api_data_fetch_full_pipeline_success(self, runner):
         """Test successful execution of complete API data fetch pipeline"""
         # Setup test data path to use local JSON file
-        test_data_path = Path("/home/hadoop/workspace/data/api_response.json")
+        test_data_path = Path("/home/hadoop/workspace/data/api_data_fetch/api_response.json")
         if not test_data_path.exists():
             # Use relative path for local testing
-            test_data_path = Path("tests/test_data/api_response.json")
+            test_data_path = Path("tests/test_data/api_data_fetch/api_response.json")
 
         assert test_data_path.exists(), f"Test data not found at {test_data_path}"
 

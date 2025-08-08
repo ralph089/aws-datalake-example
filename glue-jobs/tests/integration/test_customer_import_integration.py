@@ -28,7 +28,7 @@ class TestCustomerImportIntegration:
     def test_customer_import_full_pipeline_success(self, runner):
         """Test successful execution of complete customer import pipeline"""
         # Setup test data path to use local CSV files
-        test_data_path = Path("/home/hadoop/workspace/data/customers.csv")
+        test_data_path = Path("/home/hadoop/workspace/data/customer_import/customers.csv")
         assert test_data_path.exists(), f"Test data not found at {test_data_path}"
 
         # Test job execution
@@ -270,42 +270,3 @@ class TestCustomerImportIntegration:
             csv_files = list(Path(output_path).glob("*.csv"))
             assert len(csv_files) > 0, "No CSV files written to output directory"
 
-    @pytest.mark.skip(reason="DataQualityChecker class does not exist in customer_import module")
-    @pytest.mark.integration
-    def test_customer_import_with_quality_checker(
-        self, mock_job_context, job_factory, mocker
-    ):
-        """Test integration with DataQualityChecker using pytest-mock"""
-        from tests.factories import CustomerFactory
-        
-        # Setup mock quality checker using pytest-mock
-        mock_quality_checker = mocker.patch("jobs.customer_import.DataQualityChecker")
-        mock_checker_instance = mocker.MagicMock()
-        mock_quality_checker.return_value = mock_checker_instance
-        mock_checker_instance.check_completeness.return_value = {"passed": True}
-        mock_checker_instance.check_patterns.return_value = {"passed": True}
-
-        # Create test data using factory-boy
-        test_customer = CustomerFactory(customer_id="CUST001", first_name="John", last_name="Doe", 
-                                       email="john.doe@example.com", phone="5551234567", registration_date="2023-01-15")
-        
-        spark = job_factory.runner.spark
-        columns = ["customer_id", "first_name", "last_name", "email", "phone", "registration_date"]
-        data = [(test_customer["customer_id"], test_customer["first_name"], test_customer["last_name"], 
-                test_customer["email"], test_customer["phone"], str(test_customer["registration_date"]))]
-        df = spark.createDataFrame(data, columns)
-
-        # Use centralized mock context manager
-        with mock_job_context as mocks:
-            job = job_factory.customer_import("test_job", "test-123")
-
-            # Transform and validate
-            transformed_df = job.transform(df)
-            validation_result = job.custom_validation(transformed_df)
-
-            # Should pass with mocked quality checker
-            assert validation_result is True, "Validation should pass with mocked quality checker"
-
-            # Verify quality checker was called
-            mock_checker_instance.check_completeness.assert_called_once()
-            mock_checker_instance.check_patterns.assert_called_once()

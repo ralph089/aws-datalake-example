@@ -54,7 +54,7 @@ test-int: ## Run integration tests in Docker
 	docker exec glue-local python -c "import pytest; print('✅ Pytest available')"
 	docker exec glue-local python -c "import structlog; print('✅ Structlog available')"
 	@echo "Running full integration test suite..."
-	docker exec glue-local bash -c "cd /home/hadoop/workspace && PYTHONPATH=/home/hadoop/workspace:/home/hadoop/workspace/src pytest tests/integration -v --tb=short --with-integration"
+	docker exec glue-local pytest /home/hadoop/workspace/tests/integration -v --tb=short --no-cov --with-integration
 	@echo "✅ All integration tests completed!"
 	cd glue-jobs && docker-compose down
 

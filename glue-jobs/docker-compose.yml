@@ -14,8 +14,10 @@ services:
       - DISABLE_SSL=true
       - ENVIRONMENT=local
       - PYTHONPATH=/home/hadoop/workspace/src
+      - PYTEST_INTEGRATION=1
     working_dir: /home/hadoop/workspace
-    command: ["-c", "pip install --user -r /home/hadoop/workspace/requirements.txt && echo 'Dependencies installed successfully' && tail -f /dev/null"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["pip install --user -r /home/hadoop/workspace/requirements.txt && echo 'Dependencies installed successfully' && tail -f /dev/null"]
     stdin_open: true
     tty: true
     ports:

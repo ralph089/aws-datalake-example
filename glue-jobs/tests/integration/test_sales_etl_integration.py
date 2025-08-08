@@ -31,8 +31,8 @@ class TestSalesETLIntegration:
     def test_sales_etl_full_pipeline_success(self, runner):
         """Test successful execution of complete sales ETL pipeline"""
         # Verify test data files exist
-        sales_data_path = Path(__file__).parent.parent / "test_data" / "sales.csv"
-        products_data_path = Path(__file__).parent.parent / "test_data" / "products.csv"
+        sales_data_path = Path(__file__).parent.parent / "test_data" / "sales_etl" / "sales.csv"
+        products_data_path = Path(__file__).parent.parent / "test_data" / "sales_etl" / "products.csv"
 
         assert sales_data_path.exists(), f"Sales test data not found at {sales_data_path}"
         assert products_data_path.exists(), f"Products test data not found at {products_data_path}"

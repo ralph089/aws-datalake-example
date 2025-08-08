@@ -53,8 +53,8 @@ class SalesETLJob(BaseGlueJob):
 
         if self.environment == "local":
             # For local testing, use test data
-            sales_path = "tests/test_data/sales.csv"
-            products_path = "tests/test_data/products.csv"
+            sales_path = "tests/test_data/sales_etl/sales.csv"
+            products_path = "tests/test_data/sales_etl/products.csv"
         else:
             sales_path = f"s3://data-lake-{self.environment}-bronze/sales/"
             products_path = f"s3://data-lake-{self.environment}-silver/products/"
