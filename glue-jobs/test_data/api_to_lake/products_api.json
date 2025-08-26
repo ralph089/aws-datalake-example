@@ -1,0 +1,80 @@
+{
+  "data": [
+    {
+      "id": 1,
+      "name": "Wireless Headphones",
+      "category": "Electronics",
+      "price": 79.99,
+      "description": "High-quality wireless headphones with noise cancellation"
+    },
+    {
+      "id": 2,
+      "name": "Coffee Mug",
+      "category": "Kitchen",
+      "price": 12.50,
+      "description": "Ceramic coffee mug with company logo"
+    },
+    {
+      "id": 3,
+      "name": "Smartphone Case",
+      "category": "Accessories",
+      "price": 24.99,
+      "description": "Protective case for latest smartphone models"
+    },
+    {
+      "id": 4,
+      "name": "Desk Lamp",
+      "category": "Office",
+      "price": 45.00,
+      "description": "LED desk lamp with adjustable brightness"
+    },
+    {
+      "id": 5,
+      "name": "Water Bottle",
+      "category": "Sports",
+      "price": 18.75,
+      "description": "Stainless steel insulated water bottle"
+    },
+    {
+      "id": 6,
+      "name": "Premium Laptop",
+      "category": "Electronics",
+      "price": 1299.99,
+      "description": "High-performance laptop for professionals"
+    },
+    {
+      "id": 7,
+      "name": "Notebook Set",
+      "category": "Office",
+      "price": 8.99,
+      "description": "Set of 3 lined notebooks for note-taking"
+    },
+    {
+      "id": 8,
+      "name": "Bluetooth Speaker",
+      "category": "Electronics", 
+      "price": 55.00,
+      "description": "Portable Bluetooth speaker with excellent sound quality"
+    },
+    {
+      "id": 9,
+      "name": "Kitchen Scale",
+      "category": "Kitchen",
+      "price": 35.50,
+      "description": "Digital kitchen scale for precise measurements"
+    },
+    {
+      "id": 10,
+      "name": "Running Shoes",
+      "category": "Sports",
+      "price": 89.99,
+      "description": "Lightweight running shoes with cushioned sole"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "page_size": 100,
+    "total": 10,
+    "has_more": false
+  }
+}

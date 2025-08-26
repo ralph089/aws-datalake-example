@@ -2,10 +2,8 @@ import time
 from typing import Any
 
 import httpx
-import structlog
+from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
-
-logger = structlog.get_logger()
 
 
 class APIClient:
@@ -37,7 +35,9 @@ class APIClient:
         if not self.client_id or not self.client_secret or not self.token_endpoint:
             if self.access_token:
                 return self.access_token
-            raise ValueError("Either provide client_id/client_secret/token_endpoint for OAuth or bearer_token")
+            raise ValueError(
+                "Either provide client_id/client_secret/token_endpoint for OAuth or bearer_token"
+            )
 
         # Check if current token is still valid (with 60 second buffer)
         if self.access_token and time.time() < (self.token_expires_at - 60):
@@ -74,8 +74,14 @@ class APIClient:
         token = self._get_access_token()
         return {"Authorization": f"Bearer {token}"}
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), reraise=True)
-    def get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
+    def get(
+        self, endpoint: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """GET request with retry logic and OAuth authentication"""
         self.logger.info("api_request", method="GET", endpoint=endpoint, params=params)
 
@@ -90,7 +96,11 @@ class APIClient:
             self.logger.error("api_error", error=str(e), endpoint=endpoint)
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
     def post(self, endpoint: str, json: dict[str, Any]) -> dict[str, Any]:
         """POST request with retry logic and OAuth authentication"""
         self.logger.info("api_request", method="POST", endpoint=endpoint)

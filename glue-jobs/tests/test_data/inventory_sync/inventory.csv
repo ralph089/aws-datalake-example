@@ -1,5 +1,0 @@
-product_id,location_id,quantity_on_hand,reorder_point,max_stock_level,last_updated
-PROD001,LOC001,150,50,500,2023-01-15
-PROD002,LOC001,25,30,200,2023-01-15
-PROD003,LOC001,300,100,1000,2023-01-15
-PROD004,LOC001,75,25,300,2023-01-15

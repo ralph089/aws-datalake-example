@@ -1,5 +1,0 @@
-product_id,product_name,category,brand,price,cost,sku,in_stock
-PROD001,Wireless Headphones,Electronics,TechBrand,29.99,15.00,WH-001,true
-PROD002,Smart Watch,Electronics,SmartTech,149.99,75.00,SW-002,true
-PROD003,USB Cable,Electronics,CableCorp,19.99,5.00,USB-003,true
-PROD004,Bluetooth Speaker,Electronics,AudioPro,75.50,35.00,BT-004,true

@@ -1,24 +1,21 @@
 [project]
-name = "aws-glue-etl-example"
+name = "data-lake-to-api-lambda"
 version = "1.0.0"
-description = "Simple AWS Glue ETL Pipeline Examples"
+description = "Lambda function to read from AWS Data Lake and send to REST API"
 authors = [
     {name = "Data Engineering Team"}
 ]
-readme = "../README.md"
-requires-python = ">=3.10"
+readme = "README.md"
+requires-python = ">=3.11"
 dependencies = [
     # AWS SDK
     "boto3>=1.28.0",
     # HTTP & API
     "httpx>=0.25.0",
     "tenacity>=8.0.0",
-    # Logging
-    "loguru>=0.7.0", 
     # Configuration & Validation
     "pydantic>=2.0.0",
-    # Data processing (for local testing)
-    "pandas>=2.0.0",
+    # Data processing
     "pyarrow>=14.0.0",
 ]
 
@@ -56,12 +53,14 @@ exclude = [
     "build",
     "dist",
     "node_modules",
+    "package",
     "site-packages",
     "venv",
 ]
 
 # Assume Python 3.11
 target-version = "py311"
+line-length = 120
 
 [tool.ruff.lint]
 # See https://beta.ruff.rs/docs/rules/ for a full list of supported rules.
@@ -116,7 +115,5 @@ dev = [
     "pytest-mock>=3.12.0",
     "ruff>=0.1.0",
     "moto>=4.2.0",
-    "black>=23.0.0",
     "mypy>=1.7.0",
-    "pyspark==3.5.2",
 ]

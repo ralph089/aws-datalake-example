@@ -5,9 +5,8 @@ services:
     volumes:
       - ./src:/home/hadoop/workspace/src
       - ./tests:/home/hadoop/workspace/tests
-      - ./tests/test_data:/home/hadoop/workspace/data
+      - ./test_data:/home/hadoop/workspace/data
       - ~/.aws:/home/hadoop/.aws:ro
-      - ../dist:/home/hadoop/workspace/dist
       - ./requirements.txt:/home/hadoop/workspace/requirements.txt
       - ./log4j-local.properties:/home/hadoop/workspace/log4j-local.properties
     environment:

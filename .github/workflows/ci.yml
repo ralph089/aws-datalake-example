@@ -51,7 +51,7 @@ jobs:
         run: |
           cd glue-jobs
           uv run ruff check .
-          uv run black --check .
+          uv run ruff format --check .
       
       - name: Run type checker
         run: cd glue-jobs && uv run mypy src/
@@ -63,7 +63,46 @@ jobs:
         run: |
           cd glue-jobs
           uv build
-          cd src && zip -r ../../dist/utils.zip utils transformations validators
+          cd src && zip -r ../../dist/utils.zip utils
+
+  test-lambdas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: cd lambdas/data_lake_to_api && uv sync --dev
+      
+      - name: Run linter
+        run: |
+          cd lambdas/data_lake_to_api
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
+      
+      - name: Run type checker
+        run: cd lambdas/data_lake_to_api && uv run mypy src/
+      
+      - name: Run unit tests
+        run: cd lambdas/data_lake_to_api && uv run pytest tests/ -v --cov=src --cov-report=term-missing
+      
+      - name: Build deployment package
+        run: |
+          cd lambdas/data_lake_to_api
+          uv export --no-hashes > requirements.txt
+          mkdir -p ../../dist
+          pip install -r requirements.txt -t package/
+          cp -r src/* package/
+          cd package && zip -r ../../../dist/lambda-data-lake-to-api.zip . && cd ..
 
   integration-tests:
     runs-on: ubuntu-latest

@@ -2,9 +2,7 @@ import json
 from typing import Any
 
 import boto3
-import structlog
-
-logger = structlog.get_logger()
+from loguru import logger
 
 
 class NotificationService:
@@ -37,7 +35,9 @@ class NotificationService:
                 "output_paths": job_data.get("output_paths", []),
             }
 
-            subject = f"Glue Job Success: {job_data.get('job_name')} [{self.environment}]"
+            subject = (
+                f"Glue Job Success: {job_data.get('job_name')} [{self.environment}]"
+            )
 
             response = self.sns_client.publish(
                 TopicArn=self.topic_arn,
@@ -45,16 +45,23 @@ class NotificationService:
                 Subject=subject,
                 MessageAttributes={
                     "EventType": {"DataType": "String", "StringValue": "job_success"},
-                    "Environment": {"DataType": "String", "StringValue": self.environment},
+                    "Environment": {
+                        "DataType": "String",
+                        "StringValue": self.environment,
+                    },
                 },
             )
 
             self.logger.info(
-                "success_notification_sent", message_id=response["MessageId"], job_name=job_data.get("job_name")
+                "success_notification_sent",
+                message_id=response["MessageId"],
+                job_name=job_data.get("job_name"),
             )
 
         except Exception as e:
-            self.logger.error("notification_send_failed", error=str(e), job_data=job_data)
+            self.logger.error(
+                "notification_send_failed", error=str(e), job_data=job_data
+            )
 
     def send_failure_notification(self, job_data: dict[str, Any]):
         """Send failure notification"""
@@ -71,7 +78,9 @@ class NotificationService:
                 "error": job_data.get("error"),
             }
 
-            subject = f"🚨 Glue Job Failed: {job_data.get('job_name')} [{self.environment}]"
+            subject = (
+                f"🚨 Glue Job Failed: {job_data.get('job_name')} [{self.environment}]"
+            )
 
             response = self.sns_client.publish(
                 TopicArn=self.topic_arn,
@@ -79,16 +88,23 @@ class NotificationService:
                 Subject=subject,
                 MessageAttributes={
                     "EventType": {"DataType": "String", "StringValue": "job_failure"},
-                    "Environment": {"DataType": "String", "StringValue": self.environment},
+                    "Environment": {
+                        "DataType": "String",
+                        "StringValue": self.environment,
+                    },
                 },
             )
 
             self.logger.info(
-                "failure_notification_sent", message_id=response["MessageId"], job_name=job_data.get("job_name")
+                "failure_notification_sent",
+                message_id=response["MessageId"],
+                job_name=job_data.get("job_name"),
             )
 
         except Exception as e:
-            self.logger.error("notification_send_failed", error=str(e), job_data=job_data)
+            self.logger.error(
+                "notification_send_failed", error=str(e), job_data=job_data
+            )
 
     def _get_account_id(self) -> str:
         """Get AWS account ID"""

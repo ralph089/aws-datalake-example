@@ -1,6 +1,0 @@
-customer_id,first_name,last_name,email,phone,registration_date
-CUST001,John,Doe,john.doe@example.com,5551234567,2023-01-15
-CUST002,Jane,Smith,jane.smith@example.com,(555) 987-6543,2023-02-20
-CUST003,Bob,Johnson,bob.johnson@example.com,555-555-5555,2023-03-10
-CUST004,Alice,Williams,alice.williams@example.com,555.123.4567,2023-04-05
-CUST005,Charlie,Brown,,555-000-0000,2023-05-01

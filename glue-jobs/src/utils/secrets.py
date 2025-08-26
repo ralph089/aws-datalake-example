@@ -2,9 +2,7 @@ import json
 from typing import Any
 
 import boto3
-import structlog
-
-logger = structlog.get_logger()
+from loguru import logger
 
 
 def get_secret(secret_name: str, region: str = "us-east-1") -> dict[str, Any] | None:
@@ -21,7 +19,11 @@ def get_secret(secret_name: str, region: str = "us-east-1") -> dict[str, Any] | 
         # Try to parse as JSON, fallback to plain string
         try:
             secret_data = json.loads(secret_string)
-            logger.info("secret_retrieved", secret_name=secret_name, keys=list(secret_data.keys()))
+            logger.info(
+                "secret_retrieved",
+                secret_name=secret_name,
+                keys=list(secret_data.keys()),
+            )
             return secret_data
         except json.JSONDecodeError:
             logger.info("secret_retrieved", secret_name=secret_name, type="string")

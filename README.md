@@ -1,128 +1,267 @@
-# AWS Glue ETL Pipeline
+# AWS Glue ETL Examples
 
-Production-grade ETL pipeline using AWS Glue, Apache Iceberg, and simple data quality validation.
+Simple, clean examples demonstrating AWS Glue ETL patterns with Apache Iceberg and best practices.
 
-## Architecture
+## Features
 
-**Data Flow**: CSV Files (S3) → AWS Glue Jobs → Data Lake (Bronze/Silver/Gold) → Analytics
-
-**Technology Stack**:
-- **Processing**: AWS Glue 5.0 with Spark 3.5 and Python 3.11
-- **Storage**: Apache Iceberg tables on S3
-- **Data Quality**: Simple validation
-- **Infrastructure**: Terraform
-- **CI/CD**: GitHub Actions
+- **Simple Configuration**: Minimal setup with Pydantic models
+- **Dual-Mode Processing**: S3 event-triggered or scheduled execution
+- **API Integration**: OAuth authentication with AWS Secrets Manager
+- **Data Lake Storage**: Apache Iceberg tables with ACID transactions
+- **Notifications**: SNS alerts for job completion
+- **Local Development**: Docker-based testing with sample data
 
 ## Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- UV package manager
-- Docker
-- AWS CLI configured
-- Terraform
+- Python 3.10+
+- UV package manager  
+- Docker (for local testing)
+- AWS CLI configured (for deployment)
 
 ### Setup
 ```bash
-# Setup development environment
-make dev-setup
+# Clone and setup
+git clone <repository>
+cd aws-glue-example
 
-# Run a job locally
-make run-local JOB=customer_import
+# Install dependencies
+cd glue-jobs && uv sync
+
+# Run example job locally
+cd glue-jobs && uv run python src/jobs/simple_etl.py
 
 # Run tests
-make test
+cd glue-jobs && uv run pytest
 ```
 
 ## Project Structure
 
 ```
-├── glue-jobs/                    # PySpark ETL jobs
-│   ├── src/jobs/                # ETL job implementations
-│   ├── src/transformations/     # Reusable transformations  
-│   ├── src/utils/               # Shared utilities
-│   ├── great_expectations/      # GX configuration & expectations
-│   └── tests/                   # Unit and integration tests
-├── infrastructure/              # Terraform configurations
-└── runbooks/                    # Operational documentation
+glue-jobs/
+├── src/
+│   ├── jobs/
+│   │   ├── base_job.py         # Base ETL class
+│   │   ├── simple_etl.py       # CSV processing example
+│   │   └── api_to_lake.py      # API integration example
+│   ├── utils/
+│   │   ├── api_client.py       # API client with OAuth
+│   │   ├── logging.py          # Structured logging
+│   │   ├── notifications.py    # SNS notifications
+│   │   └── secrets.py          # AWS Secrets Manager
+│   ├── config.py               # Simple configuration
+│   └── transformations.py      # Data transformations
+├── tests/                      # Unit tests
+│   ├── test_simple_etl.py
+│   ├── test_api_to_lake.py
+│   └── test_transformations.py
+├── test_data/                  # Sample data for local testing
+└── scripts/
+    └── run_local.sh            # Local execution script
 ```
 
-## ETL Jobs
+## Example Jobs
 
-All jobs inherit from `BaseGlueJob` which provides logging, validation, notifications, and audit trails.
+### 1. Simple ETL (`simple_etl.py`)
+**Pattern**: Basic CSV to Iceberg table transformation
+- Reads customer CSV data
+- Cleans email addresses and names
+- Validates data quality
+- Writes to Iceberg table
 
-### Available Jobs
-- **`customer_import`**: Process customer CSV files with email/phone validation
-- **`sales_etl`**: Aggregate sales data with product information
-- **`inventory_sync`**: Sync inventory from APIs with change detection  
-- **`product_catalog`**: Normalize product data from multiple vendors
+**Usage**:
+```bash
+# Local development
+cd glue-jobs && uv run python src/jobs/simple_etl.py
 
-## Development Workflow
+# AWS Glue
+--JOB_NAME simple_etl --env dev
+```
+
+### 2. API to Lake (`api_to_lake.py`) 
+**Pattern**: REST API data ingestion
+- Fetches data from REST API with OAuth
+- Handles pagination automatically
+- Validates API response structure
+- Stores in data lake with metadata
+
+**Usage**:
+```bash
+# Local development (uses mock data)
+cd glue-jobs && uv run python src/jobs/api_to_lake.py
+
+# AWS Glue (fetches from real API)
+--JOB_NAME api_to_lake --env dev
+```
+
+## Key Features
+
+### BaseGlueJob Pattern
+All jobs inherit from `BaseGlueJob` providing:
+- **ETL Lifecycle**: `extract()` → `transform()` → `validate()` → `load()`
+- **Dual Triggers**: Automatic S3 event vs scheduled detection
+- **Data Loading**: Smart path resolution and format detection  
+- **Validation**: Configurable data quality checks
+- **Notifications**: Success/failure SNS alerts
+
+### Configuration
+Simple Pydantic configuration in `config.py`:
+```python
+# AWS Glue arguments automatically parsed
+config = create_config_from_glue_args(sys.argv)
+
+# Local development
+config = create_local_config("job_name")
+```
+
+### API Authentication
+Secure credential management with AWS Secrets Manager:
+```python
+# Get OAuth credentials from secrets
+api_client = job.get_api_client("prod/api/credentials")
+
+# Make authenticated requests
+response = api_client.get("/api/data")
+```
+
+### Data Transformations
+Reusable transformation functions:
+```python
+from transformations import clean_email, standardize_name
+
+# Clean data
+df = df.withColumn("email", clean_email(col("email")))
+df = df.withColumn("name", standardize_name(col("name")))
+```
+
+## Development Commands
 
 ```bash
-# Code quality checks
-make lint                # Ruff linting
-make type-check         # MyPy type checking
-make format             # Black + Ruff formatting
+# Setup
+cd glue-jobs && uv sync                    # Install dependencies
+cd glue-jobs && uv sync --group dev       # Include dev tools
+
+# Code Quality
+cd glue-jobs && uv run ruff check .       # Linting
+cd glue-jobs && uv run black .            # Formatting  
+cd glue-jobs && uv run mypy src/          # Type checking
 
 # Testing
-make test-unit          # Unit tests with coverage
-make test-int           # Integration tests with Docker
-make test-watch         # Continuous testing
+cd glue-jobs && uv run pytest             # Run tests
+cd glue-jobs && uv run pytest -v          # Verbose output
+cd glue-jobs && uv run pytest --cov       # With coverage
 
-# Local execution
-make run-local JOB=customer_import
-make run-all-local      # Run all jobs
+# Local Execution
+cd glue-jobs && uv run python src/jobs/simple_etl.py
+cd glue-jobs && uv run python src/jobs/api_to_lake.py
 ```
 
-## Deployment
+## AWS Deployment
 
+### Secrets Setup
+Create API credentials secret:
 ```bash
-# Deploy to environments
-make deploy-jobs ENV=dev
-make deploy-infra ENV=dev ACTION=plan
-make deploy-all ENV=dev
-
-# Environment shortcuts
-make dev                # Deploy to dev
-make staging            # Deploy to staging
-make prod               # Deploy to prod (with confirmation)
+aws secretsmanager create-secret \
+  --name "prod/api/credentials" \
+  --description "API credentials for data ingestion" \
+  --secret-string '{
+    "client_id": "your_client_id",
+    "client_secret": "your_client_secret", 
+    "api_base_url": "https://api.example.com"
+  }'
 ```
 
-## Monitoring
-
-Built-in observability:
-- **CloudWatch Logs**: Structured JSON logging with X-Ray tracing
-- **SNS Notifications**: Job completion alerts
-- **Custom Metrics**: Performance and data quality metrics
-- **Audit Trail**: Complete data lineage tracking
-
-## Configuration
-
-Uses UV for dependency management with `pyproject.toml`:
-
+### SNS Notifications Setup  
+Create notification topic:
 ```bash
-cd glue-jobs && uv sync                    # Install dependencies
-cd glue-jobs && uv sync --extra dev       # Development tools
-cd glue-jobs && uv add "package>=1.0.0"   # Add new dependency
+aws sns create-topic --name glue-job-notifications
+aws sns subscribe \
+  --topic-arn arn:aws:sns:region:account:glue-job-notifications \
+  --protocol email \
+  --notification-endpoint your-email@example.com
 ```
+
+### Job Deployment
+Package and deploy jobs using AWS Glue console or Terraform.
+
+## Architecture Patterns
+
+### Medallion Architecture
+- **Bronze**: Raw data ingestion (CSV, API responses)
+- **Silver**: Cleaned and validated data  
+- **Gold**: Business-ready aggregated data
+
+### Iceberg Tables
+```python
+# Atomic writes with ACID guarantees
+job.write_to_iceberg(df, "dev_customers_silver")
+
+# Schema evolution and time travel supported
+```
+
+### Event-Driven Processing
+Jobs automatically detect trigger type:
+- **S3 Events**: Process specific uploaded files
+- **Scheduled**: Process entire directories  
+- **No code changes** required
+
+## Testing Strategy
+
+### Unit Tests
+- Mock AWS services with `moto`
+- Test data transformations in isolation
+- Validate configuration and business logic
+
+### Integration Tests  
+- Full job execution in Docker
+- End-to-end data pipeline validation
+- AWS service integration testing
+
+### Local Testing
+```bash
+# Uses sample data in test_data/
+cd glue-jobs && uv run python src/jobs/simple_etl.py
+
+# Verify outputs without AWS dependencies
+```
+
+## Best Practices
+
+1. **Single Responsibility**: One job per data source or business process
+2. **Configuration**: Use Pydantic for type-safe configuration
+3. **Error Handling**: Comprehensive logging and notifications  
+4. **Testing**: Unit tests for transformations, integration tests for jobs
+5. **Security**: Store secrets in AWS Secrets Manager
+6. **Monitoring**: Structured logging with correlation IDs
+
+## Extending Examples
+
+1. **Copy** an existing job that matches your use case
+2. **Rename** the class and update configuration
+3. **Modify** extract/transform/load methods for your data
+4. **Add** test data to `test_data/your_job/`
+5. **Write** unit tests following existing patterns
+6. **Deploy** using same patterns as example jobs
 
 ## Troubleshooting
 
-```bash
-# Check job logs
-make logs JOB=customer_import ENV=dev
+**Local Development Issues**:
+- Ensure UV is installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Check Python version: `python --version` (3.10+ required)
+- Verify test data exists: `ls test_data/simple_etl/`
 
-# Local debugging
-make docker-logs        # Container logs
-make docker-shell       # Open shell in container
+**AWS Issues**:
+- Check CloudWatch logs for job execution details
+- Verify IAM permissions for Glue, S3, Secrets Manager, SNS
+- Ensure secrets exist and have correct format
 
-# View job status
-make job-status ENV=dev
-```
+**API Integration**:
+- Test credentials with local script first
+- Check network connectivity from Glue subnet
+- Verify API rate limits and pagination handling
 
 ## Support
 
-- Check [runbooks](runbooks/) for operational issues
-- Review common issues in troubleshooting section
-- Create GitHub issue for bugs/feature requests
+- Review job logs in CloudWatch
+- Check AWS Glue job metrics and errors  
+- Create GitHub issue for bugs or enhancements

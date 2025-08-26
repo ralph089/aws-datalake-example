@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch
+*.pth
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# UV
+.venv/
+
+# Generated files
+# requirements.txt is curated for Docker compatibility (not auto-generated)
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AWS/Spark
+spark-warehouse/
+metastore_db/
+derby.log
