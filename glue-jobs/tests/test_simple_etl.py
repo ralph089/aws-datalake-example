@@ -141,8 +141,65 @@ class TestSimpleETLJob:
 
         # Should not raise exception
         job.load(test_df)
-        
+
         # Test passes if no exception is raised
+
+    @pytest.mark.unit
+    def test_extract_handles_dat_files(self, spark, sample_config):
+        """Test that extract method can handle DAT files."""
+        job = SimpleETLJob(sample_config)
+        job.spark = spark
+
+        # Mock load_test_data to simulate DAT file loading
+        with patch.object(job, "load_test_data") as mock_load:
+            # First call succeeds (DAT file found)
+            mock_df = spark.createDataFrame([
+                {
+                    "customer_id": "1",
+                    "first_name": "John",
+                    "last_name": "Doe",
+                    "email": "john@example.com"
+                }
+            ])
+            mock_load.return_value = mock_df
+
+            result = job.extract()
+
+            # Should call load_test_data with customers.dat
+            mock_load.assert_called_once_with("simple_etl", "customers.dat")
+            assert result is not None
+            assert result.count() == 1
+
+    @pytest.mark.unit
+    def test_extract_fallback_to_csv(self, spark, sample_config):
+        """Test that extract method falls back to CSV when DAT file not found."""
+        job = SimpleETLJob(sample_config)
+        job.spark = spark
+
+        # Mock load_test_data to simulate DAT file not found, CSV file found
+        with patch.object(job, "load_test_data") as mock_load:
+            mock_df = spark.createDataFrame([
+                {
+                    "customer_id": "1",
+                    "first_name": "Jane",
+                    "last_name": "Smith",
+                    "email": "jane@example.com"
+                }
+            ])
+
+            # First call raises FileNotFoundError (DAT not found), second succeeds
+            mock_load.side_effect = [
+                FileNotFoundError("DAT file not found"), mock_df
+            ]
+
+            result = job.extract()
+
+            # Should call load_test_data twice
+            assert mock_load.call_count == 2
+            mock_load.assert_any_call("simple_etl", "customers.dat")
+            mock_load.assert_any_call("simple_etl", "customers.csv")
+            assert result is not None
+            assert result.count() == 1
 
     @pytest.mark.unit
     def test_required_columns_defined(self, sample_config):

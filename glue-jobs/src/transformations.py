@@ -3,6 +3,7 @@ Common data transformations for AWS Glue jobs.
 """
 
 from pyspark.sql import DataFrame
+from pyspark.sql.column import Column
 from pyspark.sql.functions import (
     concat,
     current_timestamp,
@@ -14,7 +15,7 @@ from pyspark.sql.functions import (
 )
 
 
-def clean_email(email_col):
+def clean_email(email_col: Column) -> Column:
     """Clean and validate email addresses."""
     trimmed_email = trim(email_col)
     return when(
@@ -23,7 +24,7 @@ def clean_email(email_col):
     ).otherwise(None)
 
 
-def standardize_phone(phone_col):
+def standardize_phone(phone_col: Column) -> Column:
     """Standardize phone number format to (XXX) XXX-XXXX."""
     cleaned = regexp_replace(phone_col, r"[^\d]", "")
 
@@ -40,7 +41,7 @@ def standardize_phone(phone_col):
     ).otherwise(phone_col)
 
 
-def standardize_name(name_col):
+def standardize_name(name_col: Column) -> Column:
     """Standardize name formatting."""
     cleaned = trim(regexp_replace(regexp_replace(name_col, r"\s+", " "), r"[^\w\s'-]", ""))
     return when(
@@ -49,7 +50,7 @@ def standardize_name(name_col):
     ).otherwise(None)
 
 
-def categorize_amount(amount_col, small_threshold=100, large_threshold=1000):
+def categorize_amount(amount_col: Column, small_threshold: int = 100, large_threshold: int = 1000) -> Column:
     """Categorize amounts into small, medium, large."""
     return (
         when(amount_col < small_threshold, "small")

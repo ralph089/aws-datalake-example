@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, Optional
 
 import boto3
 from loguru import logger
@@ -12,6 +12,7 @@ class NotificationService:
         self.environment = environment
         self.logger = logger.bind(component="notifications")
 
+        self.topic_arn: Optional[str]
         if environment != "local":
             self.sns_client = boto3.client("sns")
             self.topic_arn = f"arn:aws:sns:us-east-1:{self._get_account_id()}:{environment}-job-notifications"
@@ -19,7 +20,7 @@ class NotificationService:
             self.sns_client = None
             self.topic_arn = None
 
-    def send_success_notification(self, job_data: dict[str, Any]):
+    def send_success_notification(self, job_data: dict[str, Any]) -> None:
         """Send success notification"""
         if not self.sns_client:
             self.logger.info("success_notification", **job_data)
@@ -63,7 +64,7 @@ class NotificationService:
                 "notification_send_failed", error=str(e), job_data=job_data
             )
 
-    def send_failure_notification(self, job_data: dict[str, Any]):
+    def send_failure_notification(self, job_data: dict[str, Any]) -> None:
         """Send failure notification"""
         if not self.sns_client:
             self.logger.error("failure_notification", **job_data)
@@ -110,7 +111,8 @@ class NotificationService:
         """Get AWS account ID"""
         try:
             sts_client = boto3.client("sts")
-            return sts_client.get_caller_identity()["Account"]
+            account_id: str = sts_client.get_caller_identity()["Account"]
+            return account_id
         except Exception as e:
             self.logger.error("failed_to_get_account_id", error=str(e))
             return "123456789012"  # Fallback for local testing

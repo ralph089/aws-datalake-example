@@ -5,7 +5,7 @@ Provides basic Pydantic configuration models with AWS Glue argument integration.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -96,7 +96,7 @@ def create_config_from_glue_args(sys_argv: list) -> JobConfig:
         raise RuntimeError(f"Failed to create configuration: {e}") from e
 
 
-def create_local_config(job_name: str, **overrides) -> JobConfig:
+def create_local_config(job_name: str, **overrides: Any) -> JobConfig:
     """
     Create a local development configuration.
 

@@ -71,6 +71,8 @@ class APIToLakeJob(BaseGlueJob):
             api_response = json.load(f)
 
         # Convert to DataFrame
+        if self.spark is None:
+            raise RuntimeError("Spark session not initialized")
         api_df = self.spark.createDataFrame([{"response": json.dumps(api_response)}])
 
         return self._parse_api_response(api_df)
@@ -109,6 +111,8 @@ class APIToLakeJob(BaseGlueJob):
 
         # Create DataFrame from API response
         api_response = {"data": all_products}
+        if self.spark is None:
+            raise RuntimeError("Spark session not initialized")
         api_df = self.spark.createDataFrame([{"response": json.dumps(api_response)}])
 
         return self._parse_api_response(api_df)
@@ -215,7 +219,7 @@ class APIToLakeJob(BaseGlueJob):
         return ["id", "name", "price"]
 
 
-def main():
+def main() -> None:
     """Main entry point for the API ETL job."""
     if len(sys.argv) < 2:
         # Local development

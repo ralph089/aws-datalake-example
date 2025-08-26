@@ -1,7 +1,8 @@
 """
-Simple ETL job example: CSV to Iceberg table transformation.
+Simple ETL job example: CSV/DAT to Iceberg table transformation.
 
 Demonstrates basic ETL patterns with data cleaning and validation.
+Supports both CSV (comma-separated) and DAT (tab-separated) files.
 """
 
 import sys
@@ -16,26 +17,37 @@ from transformations import add_processing_metadata, clean_email, standardize_na
 
 class SimpleETLJob(BaseGlueJob):
     """
-    Example ETL job that processes customer CSV data.
+    Example ETL job that processes customer data from CSV or DAT files.
 
     Pipeline:
-    1. Extract: Load customer CSV data
+    1. Extract: Load customer data (CSV or tab-separated DAT)
     2. Transform: Clean email addresses and standardize names
     3. Validate: Check for required fields and data quality
     4. Load: Write to Iceberg table
     """
 
     def extract(self) -> DataFrame | None:
-        """Extract customer data from CSV files."""
+        """Extract customer data from CSV or DAT files."""
         if self.config.env == "local":
-            # Load test data for local development
-            return self.load_test_data("simple_etl", "customers.csv")
+            # Try to load DAT file first, fallback to CSV
+            try:
+                return self.load_test_data("simple_etl", "customers.dat")
+            except FileNotFoundError:
+                self.logger.info("DAT file not found, trying CSV file")
+                return self.load_test_data("simple_etl", "customers.csv")
         else:
-            # Load from S3 in AWS environments
-            data_path = self._get_data_path(
-                "s3://my-data-bucket/bronze/customers", "*.csv"
-            )
-            return self.load_data(data_path, "csv")
+            # Load from S3 in AWS environments - support both formats
+            try:
+                data_path = self._get_data_path(
+                    "s3://my-data-bucket/bronze/customers", "*.dat"
+                )
+                return self.load_data(data_path, "dat")
+            except Exception:
+                self.logger.info("DAT files not found, trying CSV files")
+                data_path = self._get_data_path(
+                    "s3://my-data-bucket/bronze/customers", "*.csv"
+                )
+                return self.load_data(data_path, "csv")
 
     def transform(self, df: DataFrame) -> DataFrame:
         """Clean and transform customer data."""
@@ -110,7 +122,7 @@ class SimpleETLJob(BaseGlueJob):
         return ["customer_id", "first_name", "email"]
 
 
-def main():
+def main() -> None:
     """Main entry point for the ETL job."""
     if len(sys.argv) < 2:
         # Local development

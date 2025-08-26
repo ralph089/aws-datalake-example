@@ -1,0 +1,11 @@
+customer_id	first_name	last_name	email	phone
+1	John	Doe	john.doe@example.com	555-123-4567
+2	Jane	Smith	jane.smith@gmail.com	555-234-5678
+3	Bob	Johnson	bob.johnson@invalid	555-345-6789
+4	Alice	Brown	alice@domain.com	5551234567
+5	Charlie	Wilson	charlie.wilson@company.org	+1-555-456-7890
+6	Eve	Davis		555-567-8901
+7	Frank	Miller	frank.miller@test.com	
+8	Grace	Taylor	grace@example.com	555 678 9012
+9	Henry	Anderson	henry.anderson@domain.co.uk	555.789.0123
+10	Ivy	Thomas	ivy.thomas@example.net	555-890-1234

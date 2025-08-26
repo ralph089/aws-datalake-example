@@ -18,7 +18,7 @@ def get_secret(secret_name: str, region: str = "us-east-1") -> dict[str, Any] | 
 
         # Try to parse as JSON, fallback to plain string
         try:
-            secret_data = json.loads(secret_string)
+            secret_data: dict[str, Any] = json.loads(secret_string)
             logger.info(
                 "secret_retrieved",
                 secret_name=secret_name,

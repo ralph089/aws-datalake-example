@@ -6,6 +6,7 @@ Provides core ETL patterns with logging, notifications, and secrets management.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 
@@ -40,13 +41,14 @@ class BaseGlueJob(ABC):
         self.logger.info(f"Trigger type: {config.trigger_type}")
 
         # Initialize services
+        self.notification_service: Optional[NotificationService]
         if config.enable_notifications:
             self.notification_service = NotificationService(config.env)
         else:
             self.notification_service = None
 
-        self.api_client = None  # Initialized when needed
-        self.spark = None
+        self.api_client: Optional[APIClient] = None  # Initialized when needed
+        self.spark: Optional[SparkSession] = None
 
     def run(self) -> bool:
         """Execute the complete ETL pipeline."""
@@ -150,11 +152,21 @@ class BaseGlueJob(ABC):
     def load_data(self, path: str, file_format: str = "csv") -> DataFrame:
         """Load data from file path with automatic format detection."""
         self.logger.info(f"Loading data from: {path}")
+        
+        if self.spark is None:
+            raise RuntimeError("Spark session not initialized")
 
         if file_format.lower() == "csv":
             return (
                 self.spark.read.option("header", "true")
                 .option("inferSchema", "true")
+                .csv(path)
+            )
+        elif file_format.lower() in ["dat", "tsv"]:
+            return (
+                self.spark.read.option("header", "true")
+                .option("inferSchema", "true")
+                .option("delimiter", "\t")
                 .csv(path)
             )
         elif file_format.lower() == "json":
@@ -183,6 +195,8 @@ class BaseGlueJob(ABC):
         """Get API client with credentials from AWS Secrets Manager."""
         if not self.api_client:
             credentials = get_secret(secret_name)
+            if credentials is None:
+                raise ValueError(f"Failed to retrieve credentials from secret: {secret_name}")
             self.api_client = APIClient(
                 base_url=credentials["api_base_url"],
                 client_id=credentials["client_id"],
