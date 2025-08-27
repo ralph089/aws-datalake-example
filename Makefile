@@ -1,19 +1,28 @@
-.PHONY: help setup test test-integration test-all lint format type-check run-local clean release-setup release-dry-run release commit
+.PHONY: help setup setup-lambda test test-integration test-lambda test-all lint lint-lambda format format-lambda type-check type-check-lambda run-local clean release-glue-dry-run release-lambda-dry-run release-glue release-lambda
 
 help: ## Show this help message
 	@echo "Available commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Install dependencies and setup development environment
-	@echo "Setting up development environment..."
-	cd glue-jobs && uv sync
+setup: ## Install glue-jobs dependencies and setup development environment
+	@echo "Setting up glue-jobs development environment..."
 	cd glue-jobs && uv sync --group dev
-	@echo "✅ Setup completed!"
+	@echo "✅ Glue-jobs setup completed!"
 
-test: ## Run unit tests only
-	@echo "Running unit tests..."
+setup-lambda: ## Install lambda dependencies and setup development environment
+	@echo "Setting up lambda development environment..."
+	cd lambdas/data_lake_to_api && uv sync --group dev
+	@echo "✅ Lambda setup completed!"
+
+test: ## Run glue-jobs unit tests only
+	@echo "Running glue-jobs unit tests..."
 	cd glue-jobs && uv run pytest -m unit -v
-	@echo "✅ Unit tests completed!"
+	@echo "✅ Glue-jobs unit tests completed!"
+
+test-lambda: ## Run lambda unit tests only
+	@echo "Running lambda unit tests..."
+	cd lambdas/data_lake_to_api && uv run pytest tests/ -v
+	@echo "✅ Lambda unit tests completed!"
 
 test-integration: ## Run integration tests in Docker
 	@echo "🐳 Starting Docker integration tests..."
@@ -27,26 +36,42 @@ test-integration: ## Run integration tests in Docker
 	cd glue-jobs && docker-compose down
 	@echo "✅ Integration tests completed!"
 
-test-all: ## Run all tests (unit + integration)
+test-all: ## Run all tests (glue-jobs unit + integration + lambda unit)
 	@echo "Running complete test suite..."
 	@$(MAKE) test
+	@$(MAKE) test-lambda
 	@$(MAKE) test-integration
 	@echo "✅ All tests completed!"
 
-lint: ## Run linting checks
-	@echo "Running linting checks..."
+lint: ## Run glue-jobs linting checks
+	@echo "Running glue-jobs linting checks..."
 	cd glue-jobs && uv run ruff check .
-	@echo "✅ Linting passed!"
+	@echo "✅ Glue-jobs linting passed!"
 
-format: ## Format code with ruff
-	@echo "Formatting code..."
+lint-lambda: ## Run lambda linting checks
+	@echo "Running lambda linting checks..."
+	cd lambdas/data_lake_to_api && uv run ruff check src/ tests/
+	@echo "✅ Lambda linting passed!"
+
+format: ## Format glue-jobs code with ruff
+	@echo "Formatting glue-jobs code..."
 	cd glue-jobs && uv run ruff format .
-	@echo "✅ Code formatted!"
+	@echo "✅ Glue-jobs code formatted!"
 
-type-check: ## Run type checking with mypy
-	@echo "Running type checks..."
-	cd glue-jobs && uv run mypy src/
-	@echo "✅ Type checking passed!"
+format-lambda: ## Format lambda code with ruff
+	@echo "Formatting lambda code..."
+	cd lambdas/data_lake_to_api && uv run ruff format src/ tests/
+	@echo "✅ Lambda code formatted!"
+
+type-check: ## Run glue-jobs type checking with ty
+	@echo "Running glue-jobs type checks..."
+	cd glue-jobs && uv run ty src/
+	@echo "✅ Glue-jobs type checking passed!"
+
+type-check-lambda: ## Run lambda type checking with mypy
+	@echo "Running lambda type checks..."
+	cd lambdas/data_lake_to_api && uv run mypy src/
+	@echo "✅ Lambda type checking passed!"
 
 run-local: ## Run job locally (usage: make run-local JOB=simple_etl)
 	@if [ -z "$(JOB)" ]; then \
@@ -66,7 +91,11 @@ clean: ## Clean up generated files
 	rm -rf dist/
 	rm -rf glue-jobs/.coverage
 	rm -rf glue-jobs/.pytest_cache
+	rm -rf lambdas/data_lake_to_api/.coverage
+	rm -rf lambdas/data_lake_to_api/.pytest_cache
+	rm -rf lambdas/data_lake_to_api/package
 	rm -f glue-jobs/requirements.txt
+	rm -f lambdas/data_lake_to_api/requirements.txt
 	@echo "✅ Cleanup completed!"
 
 requirements-docker: ## Generate Docker-optimized requirements.txt (excludes pre-installed packages)
@@ -86,30 +115,26 @@ requirements-docker: ## Generate Docker-optimized requirements.txt (excludes pre
 		grep -v "^s3transfer==" >> requirements.txt
 	@echo "✅ Docker-optimized requirements.txt generated!"
 
-release-setup: ## Install semantic-release dependencies (one-time setup)
-	@echo "📦 Installing semantic-release dependencies..."
-	npm install
-	@echo "✅ Semantic-release setup completed!"
+release-glue-dry-run: ## Test what the next glue-jobs version would be (dry run)
+	@echo "🧪 Running glue-jobs semantic-release dry run..."
+	cd glue-jobs && uv run semantic-release version --print
+	@echo "✅ Glue-jobs dry run completed!"
 
-release-dry-run: ## Test what the next version would be (dry run)
-	@echo "🧪 Running semantic-release dry run..."
-	npx semantic-release --dry-run
-	@echo "✅ Dry run completed!"
+release-lambda-dry-run: ## Test what the next lambda version would be (dry run)
+	@echo "🧪 Running lambda semantic-release dry run..."
+	cd lambdas/data_lake_to_api && uv run semantic-release version --print
+	@echo "✅ Lambda dry run completed!"
 
-release: ## Force a release (usually handled by CI)
-	@echo "🚀 Running semantic-release..."
+release-glue: ## Force a glue-jobs release (usually handled by CI)
+	@echo "🚀 Running glue-jobs semantic-release..."
 	@echo "⚠️  Note: This is usually handled automatically by CI on main branch"
-	npx semantic-release
-	@echo "✅ Release completed!"
+	cd glue-jobs && uv run semantic-release publish
+	@echo "✅ Glue-jobs release completed!"
 
-commit: ## Create conventional commit interactively
-	@echo "📝 Creating conventional commit..."
-	@if ! command -v npx >/dev/null 2>&1; then \
-		echo "❌ Error: npm/npx not found. Please install Node.js first."; \
-		echo "Run: make release-setup"; \
-		exit 1; \
-	fi
-	npx git-cz
-	@echo "✅ Commit created!"
+release-lambda: ## Force a lambda release (usually handled by CI)
+	@echo "🚀 Running lambda semantic-release..."
+	@echo "⚠️  Note: This is usually handled automatically by CI on main branch"
+	cd lambdas/data_lake_to_api && uv run semantic-release publish
+	@echo "✅ Lambda release completed!"
 
 .DEFAULT_GOAL := help
