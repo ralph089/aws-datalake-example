@@ -1,0 +1,16 @@
+# Example Terraform variables file for dev environment
+# Copy this to terraform.tfvars and update with your actual values
+
+aws_region    = "eu-west-1"  # Change to your AWS region
+environment   = "dev"
+project_name  = "aws-glue-example"
+
+# External API configuration
+api_base_url     = "https://api.example.com"
+api_bearer_token = "your-api-bearer-token-here"  # Replace with actual token
+
+# Notification settings
+notification_email = "your-email@example.com"  # Replace with your email
+
+# External SNS Topic ARN (provided by external system)
+external_sns_topic_arn = "arn:aws:sns:eu-west-1:123456789012:s3-events-topic"  # Replace with actual ARN

@@ -1,0 +1,21 @@
+{
+  "Records": [
+    {
+      "EventSource": "aws:sns",
+      "EventVersion": "1.0",
+      "EventSubscriptionArn": "arn:aws:sns:eu-west-1:123456789012:s3-events-topic:12345678-1234-1234-1234-123456789012",
+      "Sns": {
+        "Type": "Notification",
+        "MessageId": "12345678-1234-1234-1234-123456789012",
+        "TopicArn": "arn:aws:sns:eu-west-1:123456789012:s3-events-topic",
+        "Subject": "S3 Event via EventBridge",
+        "Message": "{\"version\":\"0\",\"id\":\"12345678-1234-1234-1234-123456789012\",\"detail-type\":\"Object Created\",\"source\":\"aws.s3\",\"account\":\"123456789012\",\"time\":\"2024-01-15T10:30:00Z\",\"region\":\"eu-west-1\",\"detail\":{\"bucket\":{\"name\":\"my-data-bucket\"},\"object\":{\"key\":\"customers/new_customers.json\",\"size\":2048}}}",
+        "Timestamp": "2024-01-15T10:30:01.000Z",
+        "SignatureVersion": "1",
+        "Signature": "ExampleSignature",
+        "SigningCertUrl": "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-ExampleCert.pem",
+        "UnsubscribeUrl": "https://sns.eu-west-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-1:123456789012:s3-events-topic:12345678-1234-1234-1234-123456789012"
+      }
+    }
+  ]
+}

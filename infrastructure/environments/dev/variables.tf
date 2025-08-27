@@ -32,3 +32,21 @@ variable "notification_email" {
   description = "Email address for notifications"
   type        = string
 }
+
+variable "external_sns_topic_arn" {
+  description = "ARN of external SNS topic that publishes S3 events"
+  type        = string
+  # Example: "arn:aws:sns:eu-west-1:123456789012:s3-events-topic"
+}
+
+variable "lambda_artifacts_bucket" {
+  description = "S3 bucket name for storing lambda deployment artifacts"
+  type        = string
+  # This should be provided externally as it's a pre-existing bucket
+}
+
+variable "glue_scripts_bucket" {
+  description = "S3 bucket name for storing Glue job scripts and code artifacts"
+  type        = string
+  default     = null  # If null, will create bucket with auto-generated name
+}

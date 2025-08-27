@@ -10,18 +10,63 @@ from pyspark.sql import SparkSession
 from config import create_local_config
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def spark():
-    """Create Spark session for testing."""
-    spark = (
-        SparkSession.builder.appName("test")
-        .master("local[2]")
-        .config("spark.sql.shuffle.partitions", "4")
-        .getOrCreate()
-    )
+    """Create a fresh Spark session for each test function.
+    
+    This ensures complete isolation between tests by creating
+    a new session for each test.
+    """
+    import os
+    
+    # Check if we're running in Docker container (integration tests)
+    is_docker = os.environ.get("PYTEST_INTEGRATION") == "1"
+    
+    if is_docker:
+        # Docker configuration for AWS Glue container
+        # Use a unique app name to avoid conflicts
+        import time
+        app_name = f"glue-integration-test-{int(time.time() * 1000)}"
+        
+        spark = (
+            SparkSession.builder
+            .appName(app_name)
+            .master("local[2]")  # Use fewer cores to reduce resource conflicts
+            .config("spark.sql.adaptive.enabled", "true")
+            .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
+            .config("spark.sql.warehouse.dir", "/tmp/spark-warehouse")
+            .config("spark.sql.shuffle.partitions", "2")  # Reduce partitions for faster tests
+            .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+            .config("spark.sql.hive.convertMetastoreParquet", "false")
+            .config("spark.sql.execution.arrow.pyspark.enabled", "false")
+            .config("spark.driver.host", "localhost")
+            .config("spark.driver.bindAddress", "localhost")
+            # Disable Hive support to avoid AWS credentials issues
+            .config("spark.sql.catalogImplementation", "in-memory")
+            .getOrCreate()
+        )
+    else:
+        # Local configuration for unit tests
+        import time
+        app_name = f"test-{int(time.time() * 1000)}"
+        
+        spark = (
+            SparkSession.builder
+            .appName(app_name)
+            .master("local[2]")
+            .config("spark.sql.shuffle.partitions", "2")
+            .config("spark.sql.catalogImplementation", "in-memory")
+            .getOrCreate()
+        )
 
     yield spark
-    spark.stop()
+    
+    # Clean shutdown
+    try:
+        spark.stop()
+    except Exception:
+        # Ignore shutdown errors
+        pass
 
 
 @pytest.fixture
@@ -84,3 +129,6 @@ def sample_products_data():
         {"id": 2, "name": "Product B", "category": "Books", "price": 19.99},
         {"id": 3, "name": "Product C", "category": "Clothing", "price": 49.99},
     ]
+
+
+# Removed job_with_spark factory - no longer needed with proper session isolation

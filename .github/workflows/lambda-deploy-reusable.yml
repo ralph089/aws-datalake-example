@@ -1,0 +1,120 @@
+name: Deploy Lambda (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      lambda_name:
+        description: 'Name of the lambda function'
+        required: true
+        type: string
+      lambda_path:
+        description: 'Path to the lambda directory'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment (dev, staging, prod)'
+        required: true
+        type: string
+      python_version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.13'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'us-east-1'
+      s3_bucket:
+        description: 'S3 bucket for lambda artifacts'
+        required: true
+        type: string
+      version_tag:
+        description: 'Version tag for deployment'
+        required: false
+        type: string
+        default: 'latest'
+    secrets:
+      AWS_ROLE_TO_ASSUME:
+        description: 'AWS role to assume for deployment'
+        required: true
+      LAMBDA_EXECUTION_ROLE_ARN:
+        description: 'Lambda execution role ARN'
+        required: true
+    outputs:
+      function_arn:
+        description: 'ARN of the deployed Lambda function'
+        value: ${{ jobs.deploy.outputs.function_arn }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      function_arn: ${{ steps.deploy.outputs.function_arn }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Build with uv (fastest)
+        working-directory: ${{ inputs.lambda_path }}
+        run: |
+          # Install uv
+          pip install uv
+
+          # Create deployment directory
+          mkdir -p uv-deploy/
+
+          # Install dependencies with uv (much faster)
+          uv pip install \
+            --target uv-deploy/ \
+            --python-version ${{ inputs.python_version }} \
+            --platform manylinux2014_x86_64 --only-binary=:all: \
+            --requirement <(uv export --no-hashes --no-dev)
+
+          # Copy source code
+          cp -r src/* uv-deploy/
+
+          # Create deployment package
+          cd uv-deploy && zip -r ../deployment.zip . && cd ..
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@209f2a4450bb4b277e1dedaff40ad2fd8d4d0a4c # v4.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Upload to S3
+        working-directory: ${{ inputs.lambda_path }}
+        run: |
+          aws s3 cp deployment.zip \
+            s3://${{ inputs.s3_bucket }}/${{ inputs.environment }}/${{ inputs.lambda_name }}/${{ inputs.version_tag }}/deployment.zip
+
+      - name: Deploy Lambda
+        id: deploy
+        uses: aws-actions/aws-lambda-deploy@246115fccc1ad110c97f729696574d09eb5c690d # v1.0.1
+        with:
+          function-name: ${{ inputs.environment }}-${{ inputs.lambda_name }}
+          s3-bucket: ${{ inputs.s3_bucket }}
+          s3-key: ${{ inputs.environment }}/${{ inputs.lambda_name }}/${{ inputs.version_tag }}/deployment.zip
+          handler: handler.lambda_handler
+          runtime: python${{ inputs.python_version }}
+          role: ${{ secrets.LAMBDA_EXECUTION_ROLE_ARN }}
+          timeout: 60
+          memory-size: 512
+          environment: |
+            {
+              "ENVIRONMENT": "${{ inputs.environment }}",
+              "LAMBDA_NAME": "${{ inputs.lambda_name }}",
+              "VERSION": "${{ inputs.version_tag }}"
+            }
+
+      - name: Output deployment info
+        run: |
+          echo "✅ Lambda ${{ inputs.lambda_name }} deployed to ${{ inputs.environment }}"
+          echo "Function: ${{ inputs.environment }}-${{ inputs.lambda_name }}"
+          echo "S3: s3://${{ inputs.s3_bucket }}/${{ inputs.environment }}/${{ inputs.lambda_name }}/${{ inputs.version_tag }}/deployment.zip"

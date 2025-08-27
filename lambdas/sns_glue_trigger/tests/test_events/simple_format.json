@@ -1,0 +1,21 @@
+{
+  "Records": [
+    {
+      "EventSource": "aws:sns",
+      "EventVersion": "1.0",
+      "EventSubscriptionArn": "arn:aws:sns:eu-west-1:123456789012:s3-events-topic:12345678-1234-1234-1234-123456789012",
+      "Sns": {
+        "Type": "Notification",
+        "MessageId": "12345678-1234-1234-1234-123456789012",
+        "TopicArn": "arn:aws:sns:eu-west-1:123456789012:s3-events-topic",
+        "Subject": "Simple S3 Event Format",
+        "Message": "{\"bucket\":\"my-data-bucket\",\"object_key\":\"inventory/warehouse_stock.csv\",\"event_name\":\"ObjectCreated:Put\",\"timestamp\":\"2024-01-15T10:30:00Z\"}",
+        "Timestamp": "2024-01-15T10:30:01.000Z",
+        "SignatureVersion": "1",
+        "Signature": "ExampleSignature",
+        "SigningCertUrl": "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-ExampleCert.pem",
+        "UnsubscribeUrl": "https://sns.eu-west-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:eu-west-1:123456789012:s3-events-topic:12345678-1234-1234-1234-123456789012"
+      }
+    }
+  ]
+}

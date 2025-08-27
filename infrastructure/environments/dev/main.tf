@@ -25,29 +25,15 @@ module "data_platform" {
   medallion_layers    = ["bronze", "silver", "gold"]
   
   glue_jobs = {
-    customer_import = {
-      script_location = "s3://glue-scripts-${var.environment}/jobs/customer_import.py"
+    simple_etl = {
+      script_location = "s3://${local.glue_scripts_bucket_name}/jobs/simple_etl.py"
       glue_version    = "5.0"
       python_version  = "3.11"
       max_capacity    = 2
       timeout         = 60
     }
-    sales_etl = {
-      script_location = "s3://glue-scripts-${var.environment}/jobs/sales_etl.py"
-      glue_version    = "5.0"
-      python_version  = "3.11"
-      max_capacity    = 4
-      timeout         = 120
-    }
-    inventory_sync = {
-      script_location = "s3://glue-scripts-${var.environment}/jobs/inventory_sync.py"
-      glue_version    = "5.0"
-      python_version  = "3.11"
-      max_capacity    = 2
-      timeout         = 60
-    }
-    product_catalog = {
-      script_location = "s3://glue-scripts-${var.environment}/jobs/product_catalog.py"
+    api_to_lake = {
+      script_location = "s3://${local.glue_scripts_bucket_name}/jobs/api_to_lake.py"
       glue_version    = "5.0"
       python_version  = "3.11"
       max_capacity    = 2
@@ -79,38 +65,17 @@ module "eventbridge" {
   environment = var.environment
   
   schedules = {
-    daily_customer_import = {
+    daily_simple_etl = {
       schedule_expression = "cron(0 2 * * ? *)"  # 2 AM daily
-      target_arn         = module.data_platform.glue_job_arns["customer_import"]
+      target_arn         = module.data_platform.glue_job_arns["simple_etl"]
     }
-    weekly_inventory_sync = {
-      schedule_expression = "cron(0 3 ? * MON *)"  # Monday 3 AM
-      target_arn         = module.data_platform.glue_job_arns["inventory_sync"]
-    }
-  }
-  
-  s3_event_rules = {
-    sales_file_trigger = {
-      bucket_name = module.data_platform.s3_buckets["bronze"]
-      prefix      = "sales/"
-      suffix      = ".csv"
-      target_arn  = module.data_platform.glue_job_arns["sales_etl"]
+    daily_api_to_lake = {
+      schedule_expression = "cron(0 3 * * ? *)"  # 3 AM daily
+      target_arn         = module.data_platform.glue_job_arns["api_to_lake"]
     }
   }
 }
 
-# Dead Letter Queue for failed jobs
-module "dlq" {
-  source = "../../modules/sqs-dlq"
-  
-  environment = var.environment
-  queues = {
-    glue_dlq = {
-      message_retention_seconds = 1209600  # 14 days
-      visibility_timeout_seconds = 300
-    }
-  }
-}
 
 # SNS for notifications
 module "notifications" {
@@ -130,9 +95,181 @@ module "notifications" {
   }
 }
 
+locals {
+  common_lambda_env = {
+    ENVIRONMENT = var.environment
+    AWS_REGION  = var.aws_region
+    LOG_LEVEL   = "INFO"
+  }
+  
+  # Use provided bucket name or create auto-generated name
+  glue_scripts_bucket_name = var.glue_scripts_bucket != null ? var.glue_scripts_bucket : "glue-scripts-${var.environment}"
+}
+
+# Data Lake to API Lambda
+module "lambda_data_lake_to_api" {
+  source = "../../modules/lambda"
+  
+  function_name = "${var.environment}-data-lake-to-api"
+  environment   = var.environment
+  handler      = "handler.lambda_handler"
+  runtime      = "python3.13"
+  timeout      = 300  # 5 minutes for data processing
+  memory_size  = 1024  # More memory for data processing
+  
+  deployment_s3_bucket = var.lambda_artifacts_bucket
+  deployment_s3_key    = "${var.environment}/data_lake_to_api/latest/deployment.zip"
+  
+  environment_variables = merge(
+    local.common_lambda_env,
+    {
+      ATHENA_DATABASE    = "glue_catalog"
+      API_SECRET_NAME    = "${var.environment}/api/credentials"
+      S3_DATA_BUCKET     = module.data_platform.s3_buckets["silver"]
+      ATHENA_WORKGROUP   = "primary"
+    }
+  )
+  
+  custom_policies = [
+    {
+      Effect = "Allow"
+      Action = [
+        "athena:StartQueryExecution",
+        "athena:GetQueryExecution",
+        "athena:GetQueryResults",
+        "athena:StopQueryExecution"
+      ]
+      Resource = ["*"]
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        module.data_platform.s3_bucket_arns["silver"],
+        "${module.data_platform.s3_bucket_arns["silver"]}/*"
+      ]
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ]
+      Resource = [
+        "arn:aws:s3:::aws-athena-query-results-*/*"
+      ]
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue"
+      ]
+      Resource = [
+        module.secrets.secret_arns["api/credentials"]
+      ]
+    },
+    {
+      Effect = "Allow"
+      Action = [
+        "glue:GetDatabase",
+        "glue:GetTable",
+        "glue:GetPartitions"
+      ]
+      Resource = ["*"]
+    }
+  ]
+  
+  external_permissions = {
+    eventbridge = {
+      principal = "events.amazonaws.com"
+    }
+    apigateway = {
+      principal = "apigateway.amazonaws.com"
+    }
+  }
+  
+  alarm_sns_topic_arn = module.notifications.topic_arns["job_notifications"]
+  log_retention_days  = 14
+  
+  tags = {
+    Purpose = "Data Lake to API"
+  }
+}
+
+# SNS Glue Trigger Lambda (using generic module)
+module "lambda_sns_glue_trigger" {
+  source = "../../modules/lambda"
+  
+  function_name = "${var.environment}-sns-glue-trigger"
+  environment   = var.environment
+  handler      = "handler.lambda_handler" 
+  runtime      = "python3.13"
+  timeout      = 60
+  memory_size  = 256  # Minimal memory for triggering jobs
+  
+  deployment_s3_bucket = var.lambda_artifacts_bucket
+  deployment_s3_key    = "${var.environment}/sns_glue_trigger/latest/deployment.zip"
+  
+  environment_variables = merge(
+    local.common_lambda_env,
+    {
+      GLUE_JOB_MAPPINGS = join(",", [
+        for prefix, job in {
+          "data/"     = "${var.environment}-simple_etl"
+          "api/"      = "${var.environment}-api_to_lake"
+        } : "${prefix}:${job}"
+      ])
+    }
+  )
+  
+  custom_policies = [
+    {
+      Effect = "Allow"
+      Action = [
+        "glue:StartJobRun",
+        "glue:GetJobRun",
+        "glue:GetJobRuns"
+      ]
+      Resource = [
+        "arn:aws:glue:*:*:job/*"
+      ]
+    }
+  ]
+  
+  external_permissions = {
+    sns = {
+      principal  = "sns.amazonaws.com"
+      source_arn = var.external_sns_topic_arn
+    }
+  }
+  
+  alarm_sns_topic_arn = module.notifications.topic_arns["job_notifications"]
+  log_retention_days  = 14
+  
+  tags = {
+    Purpose = "SNS to Glue Job Trigger"
+  }
+}
+
+# SNS Topic Subscription for the generic SNS trigger lambda
+resource "aws_sns_topic_subscription" "sns_glue_trigger" {
+  topic_arn = var.external_sns_topic_arn
+  protocol  = "lambda"
+  endpoint  = module.lambda_sns_glue_trigger.function_arn
+  
+  filter_policy = jsonencode({
+    "eventSource": ["aws:s3"]
+  })
+}
+
 # S3 bucket for Glue scripts (separate from data lake)
 resource "aws_s3_bucket" "glue_scripts" {
-  bucket = "glue-scripts-${var.environment}"
+  count  = var.glue_scripts_bucket == null ? 1 : 0
+  bucket = local.glue_scripts_bucket_name
   
   tags = {
     Environment = var.environment
@@ -141,7 +278,8 @@ resource "aws_s3_bucket" "glue_scripts" {
 }
 
 resource "aws_s3_bucket_versioning" "glue_scripts" {
-  bucket = aws_s3_bucket.glue_scripts.id
+  count  = var.glue_scripts_bucket == null ? 1 : 0
+  bucket = aws_s3_bucket.glue_scripts[0].id
   versioning_configuration {
     status = "Enabled"
   }

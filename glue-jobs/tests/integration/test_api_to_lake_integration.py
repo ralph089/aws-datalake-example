@@ -14,18 +14,7 @@ from config import create_local_config
 from jobs.api_to_lake import APIToLakeJob
 
 
-@pytest.fixture(scope="module")
-def spark():
-    """Create Spark session for integration tests."""
-    spark = (
-        SparkSession.builder.appName("api-to-lake-integration-tests")
-        .config("spark.sql.adaptive.enabled", "true")
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-        .config("spark.sql.warehouse.dir", "/tmp/spark-warehouse")
-        .getOrCreate()
-    )
-    yield spark
-    spark.stop()
+# Removed duplicate spark fixture - using the one from conftest.py
 
 
 @pytest.fixture
@@ -91,8 +80,15 @@ class TestAPIToLakeIntegration:
         job = APIToLakeJob(config)
         job.spark = spark
 
-        # Load mock API data from test file
-        test_df = job.load_test_data("api_to_lake", "products_api.json")
+        # Load actual test data from JSON file using relative path
+        import json
+        test_data_path = "test_data/api_to_lake/products_api.json"
+        
+        # Read the JSON file and extract the data array
+        with open(test_data_path) as f:
+            json_data = json.load(f)
+        
+        test_df = spark.createDataFrame(json_data["data"])
 
         # Verify data loaded
         assert test_df is not None
@@ -117,7 +113,7 @@ class TestAPIToLakeIntegration:
         job = APIToLakeJob(config)
         job.spark = spark
 
-        # Create a large dataset for testing
+        # Create a large dataset for testing using the spark fixture
         large_data = [
             {
                 "id": i,

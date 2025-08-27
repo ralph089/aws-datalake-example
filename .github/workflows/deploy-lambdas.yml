@@ -1,18 +1,6 @@
 name: Deploy Lambda Functions
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'lambdas/**'
-  pull_request:
-    types: [opened, synchronize]
-    paths:
-      - 'lambdas/**'
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       environment:
@@ -23,178 +11,68 @@ on:
           - dev
           - staging
           - prod
-      version_tag:
-        description: 'Version tag to deploy (optional, defaults to latest)'
+      lambda_name:
+        description: 'Lambda to deploy (leave empty for all)'
         required: false
         type: string
+      version_tag:
+        description: 'Version tag to deploy (defaults to latest)'
+        required: false
+        type: string
+        default: 'latest'
 
 jobs:
-  test:
+  discover-lambdas:
     runs-on: ubuntu-latest
+    outputs:
+      lambdas: ${{ steps.set-matrix.outputs.lambdas }}
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Install UV
-        uses: astral-sh/setup-uv@v2
-        with:
-          enable-cache: true
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: cd lambdas/data_lake_to_api && uv sync --dev
-      
-      - name: Run linter
-        run: |
-          cd lambdas/data_lake_to_api
-          uv run ruff check src/ tests/
-          uv run ruff format --check src/ tests/
-      
-      - name: Run type checker
-        run: cd lambdas/data_lake_to_api && uv run mypy src/
-      
-      - name: Run tests
-        run: cd lambdas/data_lake_to_api && uv run pytest tests/ -v
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
 
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Determine environment and version
-        id: env
+      - name: Determine lambdas to deploy
+        id: set-matrix
         run: |
-          # Determine version/tag to use
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.version_tag }}" ]; then
-            VERSION_TAG="${{ inputs.version_tag }}"
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            VERSION_TAG="${{ github.event.release.tag_name }}"
-            # Remove lambda-v prefix for S3 paths
-            VERSION_TAG="${VERSION_TAG#lambda-v}"
+          if [ -n "${{ inputs.lambda_name }}" ]; then
+            # Deploy specific lambda
+            echo "lambdas=[{\"name\":\"${{ inputs.lambda_name }}\",\"path\":\"lambdas/${{ inputs.lambda_name }}\"}]" >> $GITHUB_OUTPUT
           else
-            VERSION_TAG="latest"
+            # Deploy all lambdas
+            LAMBDAS="["
+            FIRST=true
+            
+            for lambda_dir in lambdas/*/; do
+              if [ -d "$lambda_dir" ]; then
+                lambda_name=$(basename "$lambda_dir")
+                
+                if [ "$FIRST" = true ]; then
+                  FIRST=false
+                else
+                  LAMBDAS="$LAMBDAS,"
+                fi
+                LAMBDAS="$LAMBDAS{\"name\":\"$lambda_name\",\"path\":\"lambdas/$lambda_name\"}"
+              fi
+            done
+            
+            LAMBDAS="$LAMBDAS]"
+            echo "lambdas=$LAMBDAS" >> $GITHUB_OUTPUT
           fi
-          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
-          
-          # Determine environment and prefix
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
-            echo "prefix=${VERSION_TAG}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "prefix=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "prefix=${VERSION_TAG}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "prefix=main" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
-            echo "environment=staging" >> $GITHUB_OUTPUT
-            echo "prefix=main" >> $GITHUB_OUTPUT
-          else
-            echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "prefix=feature" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      
-      - name: Install UV
-        uses: astral-sh/setup-uv@v2
-        with:
-          enable-cache: true
-      
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      
-      - name: Package Lambda
-        run: |
-          cd lambdas/data_lake_to_api
-          uv export --no-hashes > requirements.txt
-          mkdir -p package
-          pip install -r requirements.txt -t package/
-          cp -r src/* package/
-          cd package && zip -r ../lambda-deployment.zip . && cd ..
-      
-      - name: Deploy to S3
-        run: |
-          aws s3 cp lambdas/data_lake_to_api/lambda-deployment.zip \
-            s3://lambda-artifacts-${{ steps.env.outputs.environment }}/${{ steps.env.outputs.prefix }}/data-lake-to-api.zip
-      
-      - name: Update Lambda function for PR
-        if: github.event_name == 'pull_request'
-        run: |
-          # Update Lambda function to use PR-specific package for testing
-          aws lambda update-function-code \
-            --function-name data-lake-to-api-dev \
-            --s3-bucket lambda-artifacts-dev \
-            --s3-key ${{ steps.env.outputs.prefix }}/data-lake-to-api.zip \
-            || echo "Lambda function data-lake-to-api-dev not found, will be created by Terraform"
-      
-      - name: Update Lambda function for main/develop
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: |
-          # Update Lambda function for environment
-          aws lambda update-function-code \
-            --function-name data-lake-to-api-${{ steps.env.outputs.environment }} \
-            --s3-bucket lambda-artifacts-${{ steps.env.outputs.environment }} \
-            --s3-key ${{ steps.env.outputs.prefix }}/data-lake-to-api.zip \
-            || echo "Lambda function data-lake-to-api-${{ steps.env.outputs.environment }} not found, will be created by Terraform"
-      
-      - name: Test Lambda function
-        if: github.event_name == 'pull_request'
-        run: |
-          # Test Lambda function with sample event
-          aws lambda invoke \
-            --function-name data-lake-to-api-dev \
-            --payload '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"table":"dev_customers_silver","date_filter":"yesterday"}}' \
-            response.json \
-            || echo "Lambda test invocation failed - function may not exist yet"
-          
-          # Show response if file exists
-          if [ -f response.json ]; then
-            echo "Lambda test response:"
-            cat response.json
-          fi
-      
-      - name: Comment PR with deployment info
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `✅ Lambda functions deployed to dev for testing
-              
-              **Function Name:** \`data-lake-to-api-dev\`
-              **Artifact Location:** \`s3://lambda-artifacts-dev/pr-${{ github.event.pull_request.number }}/data-lake-to-api.zip\`
-              
-              **Test your changes:**
-              1. Go to AWS Lambda Console (dev environment)
-              2. Navigate to \`data-lake-to-api-dev\` function
-              3. Test with sample events:
-                 - EventBridge: \`{"source":"aws.events","detail-type":"Scheduled Event","detail":{"table":"dev_customers_silver"}}\`
-                 - S3: \`{"Records":[{"s3":{"bucket":{"name":"data-lake"},"object":{"key":"silver/customers/data.parquet"}}}]}\`
-                 - API Gateway: \`{"queryStringParameters":{"table":"dev_customers_silver","limit":"100"}}\`
-              4. Check CloudWatch logs for execution details
-              
-              **Environment Variables:**
-              - \`ENV=dev\`
-              - \`ATHENA_DATABASE=glue_catalog\` 
-              - \`API_SECRET_NAME=dev/api/credentials\`
-              
-              Function will revert to main after merge.`
-            })
+
+  deploy-lambdas:
+    needs: discover-lambdas
+    strategy:
+      matrix:
+        lambda: ${{ fromJson(needs.discover-lambdas.outputs.lambdas) }}
+      fail-fast: false
+    uses: ./.github/workflows/lambda-deploy-reusable.yml
+    with:
+      lambda_name: ${{ matrix.lambda.name }}
+      lambda_path: ${{ matrix.lambda.path }}
+      environment: ${{ inputs.environment }}
+      python_version: '3.13'
+      aws_region: 'eu-west-1'
+      s3_bucket: 'lambda-artifacts-${{ inputs.environment }}'
+      version_tag: ${{ inputs.version_tag || 'latest' }}
+    secrets:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      LAMBDA_EXECUTION_ROLE_ARN: ${{ secrets.LAMBDA_EXECUTION_ROLE_ARN }}

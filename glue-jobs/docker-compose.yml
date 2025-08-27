@@ -5,8 +5,10 @@ services:
     volumes:
       - ./src:/home/hadoop/workspace/src
       - ./tests:/home/hadoop/workspace/tests
-      - ./test_data:/home/hadoop/workspace/data
+      - ./test_data:/home/hadoop/workspace/test_data
       - ~/.aws:/home/hadoop/.aws:ro
+      - ./pytest.ini:/home/hadoop/workspace/pytest.ini
+      - ./pyproject.toml:/home/hadoop/workspace/pyproject.toml
       - ./requirements.txt:/home/hadoop/workspace/requirements.txt
       - ./log4j-local.properties:/home/hadoop/workspace/log4j-local.properties
     environment:
