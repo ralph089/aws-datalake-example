@@ -1,6 +1,6 @@
 [project]
 name = "data-lake-to-api-lambda"
-version = "1.0.0"
+version = "1.0.0"  # This version is managed by semantic-release
 description = "Lambda function to read from AWS Data Lake and send to REST API"
 authors = [
     {name = "Data Engineering Team"}
@@ -116,4 +116,60 @@ dev = [
     "ruff>=0.1.0",
     "moto>=4.2.0",
     "mypy>=1.7.0",
+    "python-semantic-release>=8.0.0",
 ]
+
+[tool.semantic_release]
+# Version source and management
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    "src/config.py:__version__",
+]
+
+# Git settings
+branch = "main"
+commit_message = "chore(lambda): v{version}"
+commit_author = "semantic-release <noreply@semantic-release.org>"
+
+# Build and upload
+build_command = """
+    uv lock --upgrade-package data-lake-to-api-lambda
+    git add uv.lock
+    uv build
+"""
+upload_to_vcs_release = true
+
+# Tag settings
+tag_format = "lambda-v{version}"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.develop]
+match = "develop"
+prerelease = true
+prerelease_token = "beta"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore", 
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "build"]
+
+[tool.semantic_release.changelog]
+template_dir = "templates"
+exclude_commit_patterns = []
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"

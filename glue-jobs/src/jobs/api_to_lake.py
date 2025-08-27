@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from pyspark.sql import DataFrame
+from pyspark.sql.column import Column
 from pyspark.sql.functions import col, explode, from_json, length, when
 from pyspark.sql.types import (
     DecimalType,
@@ -21,6 +22,27 @@ from pyspark.sql.types import (
 from config import create_config_from_glue_args, create_local_config
 from jobs.base_job import BaseGlueJob
 from transformations import add_processing_metadata
+
+
+# Helper functions for typed column operations
+def column_less_than(column: Column, value: int) -> Column:
+    """Helper to create typed column comparison."""
+    return column < value  # type: ignore[operator]
+
+
+def column_greater_than(column: Column, value: int) -> Column:
+    """Helper to create typed column comparison."""
+    return column > value  # type: ignore[operator]
+
+
+def column_is_not_null(column: Column) -> Column:
+    """Helper to create typed null check."""
+    return column.isNotNull()  # type: ignore[arg-type]
+
+
+def columns_and(left: Column, right: Column) -> Column:
+    """Helper to create typed boolean AND operation."""
+    return left & right  # type: ignore[operator]
 
 
 class APIToLakeJob(BaseGlueJob):
@@ -120,12 +142,10 @@ class APIToLakeJob(BaseGlueJob):
     def _parse_api_response(self, api_df: DataFrame) -> DataFrame:
         """Parse JSON API response into structured DataFrame."""
         from pyspark.sql.types import ArrayType
-        
+
         # Parse JSON response - data field contains array of products
         json_schema = StructType(
-            [
-                StructField("data", ArrayType(self.PRODUCT_SCHEMA), True)
-            ]
+            [StructField("data", ArrayType(self.PRODUCT_SCHEMA), True)]
         )
 
         # Extract products from JSON
@@ -142,15 +162,20 @@ class APIToLakeJob(BaseGlueJob):
         self.logger.info("Transforming API data")
 
         # Add derived fields
+        price_col = col("price")
+        name_col = col("name")
+
         transformed_df = (
             df.withColumn(
                 "price_category",
-                when(col("price") < 10, "budget")
-                .when(col("price") < 50, "mid_range")
+                when(column_less_than(price_col, 10), "budget")
+                .when(column_less_than(price_col, 50), "mid_range")
                 .otherwise("premium"),
             )
-            .withColumn("name_length", length(col("name")))
-            .filter(col("name").isNotNull() & col("price").isNotNull())
+            .withColumn("name_length", length(name_col))
+            .filter(
+                columns_and(column_is_not_null(name_col), column_is_not_null(price_col))
+            )
         )
 
         # Add processing metadata
@@ -170,9 +195,17 @@ class APIToLakeJob(BaseGlueJob):
         total_count = df.count()
 
         # Check required fields
-        valid_ids = df.filter(col("id").isNotNull()).count()
-        valid_names = df.filter(col("name").isNotNull()).count()
-        valid_prices = df.filter(col("price").isNotNull() & (col("price") > 0)).count()
+        id_col = col("id")
+        name_col = col("name")
+        price_col = col("price")
+
+        valid_ids = df.filter(column_is_not_null(id_col)).count()
+        valid_names = df.filter(column_is_not_null(name_col)).count()
+        valid_prices = df.filter(
+            columns_and(
+                column_is_not_null(price_col), column_greater_than(price_col, 0)
+            )
+        ).count()
 
         # Calculate quality metrics
         id_validity = valid_ids / total_count if total_count > 0 else 0

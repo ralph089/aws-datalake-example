@@ -11,6 +11,8 @@ on:
     types: [opened, synchronize]
     paths:
       - 'glue-jobs/**'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       environment:
@@ -21,6 +23,10 @@ on:
           - dev
           - staging
           - prod
+      version_tag:
+        description: 'Version tag to deploy (optional, defaults to latest)'
+        required: false
+        type: string
 
 jobs:
   test:
@@ -51,15 +57,31 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Determine environment
+      - name: Determine environment and version
         id: env
         run: |
+          # Determine version/tag to use
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.version_tag }}" ]; then
+            VERSION_TAG="${{ inputs.version_tag }}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            VERSION_TAG="${{ github.event.release.tag_name }}"
+            # Remove glue-v prefix for S3 paths
+            VERSION_TAG="${VERSION_TAG#glue-v}"
+          else
+            VERSION_TAG="latest"
+          fi
+          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
+          
+          # Determine environment and prefix
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
-            echo "prefix=main" >> $GITHUB_OUTPUT
+            echo "prefix=${VERSION_TAG}" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "environment=dev" >> $GITHUB_OUTPUT
             echo "prefix=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+            echo "prefix=${VERSION_TAG}" >> $GITHUB_OUTPUT
           elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
             echo "environment=prod" >> $GITHUB_OUTPUT
             echo "prefix=main" >> $GITHUB_OUTPUT
@@ -123,6 +145,7 @@ jobs:
               repo: context.repo.name,
               body: `✅ Glue jobs deployed to dev for testing
               
+              **Version:** \`${{ steps.env.outputs.version_tag }}\`
               **Scripts Location:** \`s3://glue-scripts-dev/jobs/pr-${{ github.event.pull_request.number }}/\`
               **Utils Library:** \`s3://glue-scripts-dev/libs/pr-${{ github.event.pull_request.number }}/utils.zip\`
               
@@ -134,3 +157,15 @@ jobs:
               
               Scripts will revert to main after merge.`
             })
+
+      - name: Comment on release deployment
+        if: github.event_name == 'release'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const releaseTag = '${{ steps.env.outputs.version_tag }}';
+            const environment = '${{ steps.env.outputs.environment }}';
+            
+            console.log(`🚀 Glue jobs deployed for release ${releaseTag} to ${environment} environment`);
+            console.log(`📦 Scripts Location: s3://glue-scripts-${environment}/jobs/${releaseTag}/`);
+            console.log(`📚 Utils Library: s3://glue-scripts-${environment}/libs/${releaseTag}/utils.zip`);

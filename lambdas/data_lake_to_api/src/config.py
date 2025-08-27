@@ -4,6 +4,8 @@ Configuration for the Data Lake to API Lambda function.
 Provides Pydantic configuration models for Lambda event handling and runtime settings.
 """
 
+__version__ = "1.0.0"
+
 import os
 from typing import Any, Literal
 

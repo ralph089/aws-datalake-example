@@ -83,7 +83,7 @@ class TestTransformations:
     def test_categorize_amount_default_thresholds(self, spark):
         """Test amount categorization with default thresholds."""
         from decimal import Decimal
-        
+
         data = [(Decimal("50.00"),), (Decimal("150.00"),), (Decimal("1500.00"),)]
         schema = StructType([StructField("amount", DecimalType(10, 2), True)])
 
@@ -98,7 +98,7 @@ class TestTransformations:
     def test_categorize_amount_custom_thresholds(self, spark):
         """Test amount categorization with custom thresholds."""
         from decimal import Decimal
-        
+
         data = [(Decimal("25.00"),), (Decimal("75.00"),), (Decimal("150.00"),)]
         schema = StructType([StructField("amount", DecimalType(10, 2), True)])
 

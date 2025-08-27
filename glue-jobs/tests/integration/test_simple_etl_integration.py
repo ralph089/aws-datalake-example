@@ -6,7 +6,6 @@ to validate end-to-end functionality.
 """
 
 import tempfile
-from pathlib import Path
 
 import pytest
 from pyspark.sql import SparkSession
@@ -82,7 +81,7 @@ class TestSimpleETLIntegration:
         assert "processed_by_job" in transformed_df.columns
 
         # Verify data quality
-        null_count = transformed_df.filter(transformed_df.email.isNull()).count()
+        null_count = transformed_df.filter(transformed_df.email.isNull()).count()  # type: ignore[arg-type]
         assert null_count == 0  # All emails should be valid after cleaning
 
     def test_job_handles_empty_data(self, spark):

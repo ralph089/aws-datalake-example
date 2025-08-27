@@ -36,18 +36,51 @@ class SimpleETLJob(BaseGlueJob):
                 self.logger.info("DAT file not found, trying CSV file")
                 return self.load_test_data("simple_etl", "customers.csv")
         else:
-            # Load from S3 in AWS environments - support both formats
-            try:
-                data_path = self._get_data_path(
-                    "s3://my-data-bucket/bronze/customers", "*.dat"
+            # S3 Event triggered - process specific file
+            if self.config.is_event_triggered:
+                self.logger.info(
+                    f"Processing S3 event file: s3://{self.config.bucket}/{self.config.object_key}"
                 )
-                return self.load_data(data_path, "dat")
-            except Exception:
-                self.logger.info("DAT files not found, trying CSV files")
+
+                # Determine file format from extension
+                file_format = self._detect_file_format(self.config.object_key)
                 data_path = self._get_data_path(
-                    "s3://my-data-bucket/bronze/customers", "*.csv"
-                )
-                return self.load_data(data_path, "csv")
+                    "", ""
+                )  # Returns s3://bucket/object_key
+                return self.load_data(data_path, file_format)
+
+            # Scheduled execution - process all files in directory
+            else:
+                self.logger.info("Scheduled execution - processing all customer files")
+                try:
+                    data_path = self._get_data_path(
+                        "s3://my-data-bucket/bronze/customers", "*.dat"
+                    )
+                    return self.load_data(data_path, "dat")
+                except Exception:
+                    self.logger.info("DAT files not found, trying CSV files")
+                    data_path = self._get_data_path(
+                        "s3://my-data-bucket/bronze/customers", "*.csv"
+                    )
+                    return self.load_data(data_path, "csv")
+
+    def _detect_file_format(self, object_key: str) -> str:
+        """Detect file format from S3 object key extension."""
+        extension = object_key.lower().split(".")[-1]
+        format_mapping = {
+            "csv": "csv",
+            "dat": "dat",
+            "tsv": "dat",  # Tab-separated values
+            "txt": "csv",  # Assume comma-separated text
+            "json": "json",
+            "parquet": "parquet",
+        }
+
+        detected_format = format_mapping.get(extension, "csv")
+        self.logger.info(
+            f"Detected file format: {detected_format} from extension: {extension}"
+        )
+        return detected_format
 
     def transform(self, df: DataFrame) -> DataFrame:
         """Clean and transform customer data."""
@@ -61,7 +94,7 @@ class SimpleETLJob(BaseGlueJob):
             .withColumn(
                 "full_name",
                 when(
-                    col("first_name").isNotNull() & col("last_name").isNotNull(),
+                    col("first_name").isNotNull() & col("last_name").isNotNull(),  # type: ignore[arg-type,operator]
                     concat(col("first_name"), lit(" "), col("last_name")),
                 ).otherwise(col("first_name")),
             )
@@ -82,8 +115,8 @@ class SimpleETLJob(BaseGlueJob):
 
         # Check data quality metrics
         total_count = df.count()
-        valid_emails = df.filter(col("email").isNotNull()).count()
-        valid_names = df.filter(col("first_name").isNotNull()).count()
+        valid_emails = df.filter(col("email").isNotNull()).count()  # type: ignore[arg-type]
+        valid_names = df.filter(col("first_name").isNotNull()).count()  # type: ignore[arg-type]
 
         email_validity_rate = valid_emails / total_count if total_count > 0 else 0
         name_validity_rate = valid_names / total_count if total_count > 0 else 0

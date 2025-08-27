@@ -2,6 +2,8 @@
 Common data transformations for AWS Glue jobs.
 """
 
+from typing import TYPE_CHECKING
+
 from pyspark.sql import DataFrame
 from pyspark.sql.column import Column
 from pyspark.sql.functions import (
@@ -13,6 +15,9 @@ from pyspark.sql.functions import (
     trim,
     when,
 )
+
+if TYPE_CHECKING:
+    pass
 
 
 def clean_email(email_col: Column) -> Column:
@@ -43,18 +48,31 @@ def standardize_phone(phone_col: Column) -> Column:
 
 def standardize_name(name_col: Column) -> Column:
     """Standardize name formatting."""
-    cleaned = trim(regexp_replace(regexp_replace(name_col, r"\s+", " "), r"[^\w\s'-]", ""))
+    cleaned: Column = trim(
+        regexp_replace(regexp_replace(name_col, r"\s+", " "), r"[^\w\s'-]", "")
+    )
+    # PySpark Column operators return Column types, but Ty doesn't understand this yet
+    not_null_condition: Column = name_col.isNotNull()  # type: ignore[assignment]
+    not_empty_condition: Column = cleaned != ""  # type: ignore[assignment]
+    combined_condition: Column = not_null_condition & not_empty_condition  # type: ignore[operator]
+
     return when(
-        name_col.isNotNull() & (cleaned != ""),
+        combined_condition,
         cleaned,
     ).otherwise(None)
 
 
-def categorize_amount(amount_col: Column, small_threshold: int = 100, large_threshold: int = 1000) -> Column:
+def categorize_amount(
+    amount_col: Column, small_threshold: int = 100, large_threshold: int = 1000
+) -> Column:
     """Categorize amounts into small, medium, large."""
+    # PySpark Column comparison operators return Column types
+    small_condition: Column = amount_col < small_threshold  # type: ignore[assignment]
+    medium_condition: Column = amount_col < large_threshold  # type: ignore[assignment]
+
     return (
-        when(amount_col < small_threshold, "small")
-        .when(amount_col < large_threshold, "medium")
+        when(small_condition, "small")
+        .when(medium_condition, "medium")
         .otherwise("large")
     )
 

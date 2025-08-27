@@ -77,7 +77,7 @@ class TestAPIToLakeIntegration:
         job.spark = spark
 
         # Mock API client for integration tests
-        job.api_client = MockAPIClient()
+        job.api_client = MockAPIClient()  # type: ignore[assignment]
 
         # Run the job
         result = job.run()
@@ -107,7 +107,7 @@ class TestAPIToLakeIntegration:
 
         # Verify all products have valid categories
         category_count = transformed_df.filter(
-            transformed_df.price_category.isNotNull()
+            transformed_df.price_category.isNotNull()  # type: ignore[arg-type]
         ).count()
         assert category_count == transformed_df.count()
 
@@ -167,10 +167,10 @@ class TestAPIToLakeIntegration:
                 else:
                     return {"data": []}
 
-        job.api_client = MockPaginatedAPIClient()
+        job.api_client = MockPaginatedAPIClient()  # type: ignore[assignment]
 
         # Test the pagination handling
         result = job._fetch_from_api()
 
         # Should have called API multiple times
-        assert job.api_client.call_count >= 2
+        assert job.api_client.call_count >= 2  # type: ignore[attr-defined]

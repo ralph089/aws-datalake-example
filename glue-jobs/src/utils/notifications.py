@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from loguru import logger
@@ -12,7 +12,7 @@ class NotificationService:
         self.environment = environment
         self.logger = logger.bind(component="notifications")
 
-        self.topic_arn: Optional[str]
+        self.topic_arn: str | None
         if environment != "local":
             self.sns_client = boto3.client("sns")
             self.topic_arn = f"arn:aws:sns:us-east-1:{self._get_account_id()}:{environment}-job-notifications"

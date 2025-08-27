@@ -131,9 +131,7 @@ class TestSimpleETLJob:
         assert result is False
 
     @pytest.mark.unit
-    def test_load_local_shows_data(
-        self, spark, sample_config, sample_customers_data
-    ):
+    def test_load_local_shows_data(self, spark, sample_config, sample_customers_data):
         """Test load method in local environment."""
         test_df = spark.createDataFrame(sample_customers_data)
 
@@ -153,14 +151,16 @@ class TestSimpleETLJob:
         # Mock load_test_data to simulate DAT file loading
         with patch.object(job, "load_test_data") as mock_load:
             # First call succeeds (DAT file found)
-            mock_df = spark.createDataFrame([
-                {
-                    "customer_id": "1",
-                    "first_name": "John",
-                    "last_name": "Doe",
-                    "email": "john@example.com"
-                }
-            ])
+            mock_df = spark.createDataFrame(
+                [
+                    {
+                        "customer_id": "1",
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "email": "john@example.com",
+                    }
+                ]
+            )
             mock_load.return_value = mock_df
 
             result = job.extract()
@@ -178,19 +178,19 @@ class TestSimpleETLJob:
 
         # Mock load_test_data to simulate DAT file not found, CSV file found
         with patch.object(job, "load_test_data") as mock_load:
-            mock_df = spark.createDataFrame([
-                {
-                    "customer_id": "1",
-                    "first_name": "Jane",
-                    "last_name": "Smith",
-                    "email": "jane@example.com"
-                }
-            ])
+            mock_df = spark.createDataFrame(
+                [
+                    {
+                        "customer_id": "1",
+                        "first_name": "Jane",
+                        "last_name": "Smith",
+                        "email": "jane@example.com",
+                    }
+                ]
+            )
 
             # First call raises FileNotFoundError (DAT not found), second succeeds
-            mock_load.side_effect = [
-                FileNotFoundError("DAT file not found"), mock_df
-            ]
+            mock_load.side_effect = [FileNotFoundError("DAT file not found"), mock_df]
 
             result = job.extract()
 

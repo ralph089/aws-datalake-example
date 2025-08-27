@@ -8,7 +8,7 @@ and that basic functionality works across all jobs.
 import pytest
 from pyspark.sql import SparkSession
 
-from config import JobConfig, create_local_config
+from config import create_local_config
 from transformations import clean_email, standardize_name
 from utils.logging import setup_logging
 from utils.notifications import NotificationService
@@ -70,7 +70,8 @@ class TestEnvironmentIntegration:
 
         # Add age category
         df_with_category = df.withColumn(
-            "category", when(col("age") >= 18, "adult").otherwise("minor")
+            "category",
+            when(col("age") >= 18, "adult").otherwise("minor"),  # type: ignore[operator]
         )
 
         # Verify transformation
@@ -83,10 +84,6 @@ class TestEnvironmentIntegration:
     def test_imports_working(self):
         """Test that all essential imports work."""
         # Test core imports
-        from config import JobConfig, create_local_config
-        from transformations import clean_email, standardize_name
-        from utils.logging import setup_logging
-        from utils.notifications import NotificationService
 
         # Test that they can be instantiated/called
         config = create_local_config("test")

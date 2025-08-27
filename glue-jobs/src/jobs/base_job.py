@@ -6,7 +6,6 @@ Provides core ETL patterns with logging, notifications, and secrets management.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 
@@ -41,14 +40,14 @@ class BaseGlueJob(ABC):
         self.logger.info(f"Trigger type: {config.trigger_type}")
 
         # Initialize services
-        self.notification_service: Optional[NotificationService]
+        self.notification_service: NotificationService | None
         if config.enable_notifications:
             self.notification_service = NotificationService(config.env)
         else:
             self.notification_service = None
 
-        self.api_client: Optional[APIClient] = None  # Initialized when needed
-        self.spark: Optional[SparkSession] = None
+        self.api_client: APIClient | None = None  # Initialized when needed
+        self.spark: SparkSession | None = None
 
     def run(self) -> bool:
         """Execute the complete ETL pipeline."""
@@ -152,7 +151,7 @@ class BaseGlueJob(ABC):
     def load_data(self, path: str, file_format: str = "csv") -> DataFrame:
         """Load data from file path with automatic format detection."""
         self.logger.info(f"Loading data from: {path}")
-        
+
         if self.spark is None:
             raise RuntimeError("Spark session not initialized")
 
@@ -196,12 +195,14 @@ class BaseGlueJob(ABC):
         if not self.api_client:
             credentials = get_secret(secret_name)
             if credentials is None:
-                raise ValueError(f"Failed to retrieve credentials from secret: {secret_name}")
+                raise ValueError(
+                    f"Failed to retrieve credentials from secret: {secret_name}"
+                )
             self.api_client = APIClient(
                 base_url=credentials["api_base_url"],
                 client_id=credentials["client_id"],
                 client_secret=credentials["client_secret"],
-                token_endpoint=credentials.get("token_endpoint", "/oauth/token")
+                token_endpoint=credentials.get("token_endpoint", "/oauth/token"),
             )
 
         return self.api_client

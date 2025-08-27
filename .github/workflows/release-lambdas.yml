@@ -1,0 +1,187 @@
+name: Release Lambdas
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'lambdas/**'
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Lambda package to release'
+        required: true
+        type: choice
+        options:
+          - data_lake_to_api
+        default: data_lake_to_api
+
+concurrency:
+  group: release-lambdas-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Run Lambda Tests Before Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install lambda dependencies
+        run: cd lambdas/data_lake_to_api && uv sync --group dev
+
+      - name: Run lambda linter
+        run: |
+          cd lambdas/data_lake_to_api
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
+
+      - name: Run lambda type checker
+        run: cd lambdas/data_lake_to_api && uv run mypy src/
+
+      - name: Run lambda unit tests
+        run: cd lambdas/data_lake_to_api && uv run pytest tests/ -v --cov=src --cov-report=term-missing
+
+  build:
+    name: Build Lambda Packages
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Build lambda package
+        run: |
+          cd lambdas/data_lake_to_api
+          uv sync
+          uv build
+          mkdir -p ../../dist
+          cp dist/*.whl ../../dist/
+          # Create lambda deployment package
+          uv export --no-hashes --no-dev > requirements.txt
+          mkdir -p package
+          pip install -r requirements.txt -t package/
+          cp -r src/* package/
+          cd package && zip -r ../../../dist/lambda-data-lake-to-api.zip . && cd ..
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-build-artifacts
+          path: dist/
+          retention-days: 30
+
+  release:
+    name: Python Semantic Release for Lambdas
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      version: ${{ steps.semantic_release.outputs.version }}
+      released: ${{ steps.semantic_release.outputs.released }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: cd lambdas/data_lake_to_api && uv sync --group dev
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-build-artifacts
+          path: dist/
+
+      - name: Run Python Semantic Release
+        id: semantic_release
+        uses: python-semantic-release/python-semantic-release@v9.14.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          directory: "./lambdas/data_lake_to_api"
+
+      - name: Upload release artifacts
+        if: steps.semantic_release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Upload distribution files to the release
+          gh release upload lambda-v${{ steps.semantic_release.outputs.version }} dist/lambda-data-lake-to-api.zip dist/*data-lake-to-api*.whl
+
+  notify-success:
+    name: Notify Lambda Release Success
+    needs: release
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.released == 'true'
+    steps:
+      - name: Release Success Notification
+        run: |
+          echo "🎉 Lambda release lambda-v${{ needs.release.outputs.version }} completed successfully!"
+          echo "📦 New version has been published"
+          echo "📋 Changelog has been updated"
+          echo "🏷️ Git tag has been created"
+
+  notify-no-release:
+    name: Notify No Lambda Release Needed
+    needs: release
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.released == 'false'
+    steps:
+      - name: No Release Notification
+        run: |
+          echo "ℹ️ No lambda release needed"
+          echo "📝 No conventional commits found in lambdas/ that trigger a release"
+          echo "💡 Use feat:, fix:, or breaking changes to trigger releases"
+
+  notify-failure:
+    name: Notify Lambda Release Failure
+    needs: [test, build, release]
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Release Failure Notification
+        run: |
+          echo "❌ Lambda release failed!"
+          echo "🔍 Please check the workflow logs for details"
+          echo "🛠️ Fix any issues and push again to retry"

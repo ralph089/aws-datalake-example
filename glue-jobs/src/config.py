@@ -4,6 +4,8 @@ Simple configuration for AWS Glue jobs.
 Provides basic Pydantic configuration models with AWS Glue argument integration.
 """
 
+__version__ = "1.0.0"
+
 from datetime import datetime
 from typing import Any, Literal
 
@@ -60,7 +62,7 @@ def create_config_from_glue_args(sys_argv: list) -> JobConfig:
         JobConfig instance
     """
     try:
-        from awsglue.utils import getResolvedOptions
+        from awsglue.utils import getResolvedOptions  # type: ignore[import-untyped]
 
         required_args = ["JOB_NAME"]
         optional_args = [

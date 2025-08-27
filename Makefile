@@ -1,4 +1,4 @@
-.PHONY: help setup test test-integration test-all lint format type-check run-local clean
+.PHONY: help setup test test-integration test-all lint format type-check run-local clean release-setup release-dry-run release commit
 
 help: ## Show this help message
 	@echo "Available commands:"
@@ -85,5 +85,31 @@ requirements-docker: ## Generate Docker-optimized requirements.txt (excludes pre
 		grep -v "^botocore==" | \
 		grep -v "^s3transfer==" >> requirements.txt
 	@echo "✅ Docker-optimized requirements.txt generated!"
+
+release-setup: ## Install semantic-release dependencies (one-time setup)
+	@echo "📦 Installing semantic-release dependencies..."
+	npm install
+	@echo "✅ Semantic-release setup completed!"
+
+release-dry-run: ## Test what the next version would be (dry run)
+	@echo "🧪 Running semantic-release dry run..."
+	npx semantic-release --dry-run
+	@echo "✅ Dry run completed!"
+
+release: ## Force a release (usually handled by CI)
+	@echo "🚀 Running semantic-release..."
+	@echo "⚠️  Note: This is usually handled automatically by CI on main branch"
+	npx semantic-release
+	@echo "✅ Release completed!"
+
+commit: ## Create conventional commit interactively
+	@echo "📝 Creating conventional commit..."
+	@if ! command -v npx >/dev/null 2>&1; then \
+		echo "❌ Error: npm/npx not found. Please install Node.js first."; \
+		echo "Run: make release-setup"; \
+		exit 1; \
+	fi
+	npx git-cz
+	@echo "✅ Commit created!"
 
 .DEFAULT_GOAL := help

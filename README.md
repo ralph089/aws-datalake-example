@@ -225,6 +225,28 @@ cd glue-jobs && uv run python src/jobs/simple_etl.py
 # Verify outputs without AWS dependencies
 ```
 
+### S3 Event Testing
+Test S3 event-triggered execution locally:
+```bash
+# Quick interactive testing with multiple scenarios
+./glue-jobs/scripts/test_s3_events.sh
+
+# Manual testing - simulate S3 event for simple_etl job
+cd glue-jobs && uv run python src/jobs/simple_etl.py \
+  --bucket my-data-bucket \
+  --object_key bronze/customers/daily_import.csv
+
+# Manual testing - simulate S3 event for api_to_lake job  
+cd glue-jobs && uv run python src/jobs/api_to_lake.py \
+  --bucket api-bucket \
+  --object_key raw/products/products_20240115.json
+
+# Docker-based testing with S3 event simulation
+./glue-jobs/scripts/run_local.sh simple_etl local my-bucket path/to/file.csv
+
+# Job automatically detects it's event-triggered and processes specific file
+```
+
 ## Best Practices
 
 1. **Single Responsibility**: One job per data source or business process

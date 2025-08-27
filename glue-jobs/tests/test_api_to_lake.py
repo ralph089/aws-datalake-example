@@ -91,16 +91,24 @@ class TestAPIToLakeJob:
     @pytest.mark.unit
     def test_validate_fails_missing_required_fields(self, spark, sample_config):
         """Test validation fails when required fields are missing."""
-        from pyspark.sql.types import IntegerType, StringType, DecimalType, StructField, StructType
-        
+        from pyspark.sql.types import (
+            DecimalType,
+            IntegerType,
+            StringType,
+            StructField,
+            StructType,
+        )
+
         # Define schema with optional fields
-        schema = StructType([
-            StructField("id", IntegerType(), True),
-            StructField("name", StringType(), True),
-            StructField("category", StringType(), True),
-            StructField("price", DecimalType(10, 2), True)
-        ])
-        
+        schema = StructType(
+            [
+                StructField("id", IntegerType(), True),
+                StructField("name", StringType(), True),
+                StructField("category", StringType(), True),
+                StructField("price", DecimalType(10, 2), True),
+            ]
+        )
+
         # Missing names and prices
         bad_data = [
             {"id": 1, "name": None, "category": "Electronics", "price": None},
@@ -128,7 +136,7 @@ class TestAPIToLakeJob:
             "client_secret": "test_client_secret",
             "api_base_url": "https://api.example.com",
         }
-        
+
         # Mock API client instance
         mock_client = Mock()
         mock_api_client_class.return_value = mock_client
@@ -159,9 +167,7 @@ class TestAPIToLakeJob:
         assert mock_client.get.call_count == 2
 
     @pytest.mark.unit
-    def test_load_local_shows_data(
-        self, spark, sample_config, sample_products_data
-    ):
+    def test_load_local_shows_data(self, spark, sample_config, sample_products_data):
         """Test load method in local environment."""
         test_df = spark.createDataFrame(sample_products_data)
 
@@ -169,7 +175,7 @@ class TestAPIToLakeJob:
 
         # Should not raise exception
         job.load(test_df)
-        
+
         # Test passes if no exception is raised
 
     @pytest.mark.unit

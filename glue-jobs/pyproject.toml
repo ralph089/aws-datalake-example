@@ -1,6 +1,6 @@
 [project]
 name = "aws-glue-etl-example"
-version = "1.0.0"
+version = "1.0.0"  # This version is managed by semantic-release
 description = "Simple AWS Glue ETL Pipeline Examples"
 authors = [
     {name = "Data Engineering Team"}
@@ -39,7 +39,7 @@ exclude = [
     ".git-rewrite",
     ".hg",
     ".ipynb_checkpoints",
-    ".mypy_cache",
+    ".ty_cache",
     ".nox",
     ".pants.d",
     ".pyenv",
@@ -97,6 +97,10 @@ docstring-code-format = true
 # enabled.
 docstring-code-line-length = "dynamic"
 
+[tool.ty]
+# Specify the source code location
+environment.root = ["./src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -117,8 +121,65 @@ dev = [
     "ruff>=0.1.0",
     "moto>=4.2.0",
     "black>=23.0.0",
-    "mypy>=1.7.0",
+    "ty",
     "pyspark==3.5.2",
-    "boto3-stubs>=1.40.17",
-    "mypy-boto3>=1.40.0",
+    "python-semantic-release>=8.0.0",
 ]
+
+[tool.semantic_release]
+# Version source and management
+version_toml = ["pyproject.toml:project.version"]
+version_variables = [
+    "src/config.py:__version__",
+]
+
+# Git settings
+branch = "main"
+commit_message = "chore(glue): v{version}"
+commit_author = "semantic-release <noreply@semantic-release.org>"
+
+# Build and upload
+build_command = """
+    uv lock --upgrade-package aws-glue-etl-example
+    git add uv.lock
+    uv build
+"""
+upload_to_vcs_release = true
+
+# Changelog settings
+
+# Tag settings
+tag_format = "glue-v{version}"
+
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.develop]
+match = "develop"
+prerelease = true
+prerelease_token = "beta"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "build",
+    "chore", 
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "style",
+    "refactor",
+    "test",
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf", "build"]
+
+[tool.semantic_release.changelog]
+template_dir = "templates"
+exclude_commit_patterns = []
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "../CHANGELOG.md"
