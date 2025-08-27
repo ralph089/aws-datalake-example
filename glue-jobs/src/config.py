@@ -9,7 +9,7 @@ __version__ = "1.0.0"
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class JobConfig(BaseModel):
@@ -46,9 +46,7 @@ class JobConfig(BaseModel):
         """Get trigger type."""
         return "s3_event" if self.is_event_triggered else "scheduled"
 
-    class Config:
-        validate_assignment = True
-        extra = "forbid"
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
 
 def create_config_from_glue_args(sys_argv: list) -> JobConfig:

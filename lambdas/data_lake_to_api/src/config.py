@@ -9,7 +9,7 @@ __version__ = "1.0.0"
 import os
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LambdaConfig(BaseModel):
@@ -23,9 +23,7 @@ class LambdaConfig(BaseModel):
     batch_size: int = Field(default=100, description="Number of records to send per API batch")
     max_records: int = Field(default=10000, description="Maximum number of records to process")
 
-    class Config:
-        validate_assignment = True
-        extra = "forbid"
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
 
 class ScheduledEventConfig(BaseModel):
