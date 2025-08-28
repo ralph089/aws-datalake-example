@@ -6,7 +6,27 @@ output "s3_data_buckets" {
 
 output "glue_job_arns" {
   description = "Glue job ARNs"
-  value       = module.data_platform.glue_job_arns
+  value = {
+    simple_etl  = aws_glue_job.simple_etl.arn
+    api_to_lake = aws_glue_job.api_to_lake.arn
+  }
+}
+
+output "glue_job_names" {
+  description = "Glue job names for triggers and monitoring"
+  value = {
+    simple_etl  = aws_glue_job.simple_etl.name
+    api_to_lake = aws_glue_job.api_to_lake.name
+  }
+}
+
+output "glue_deployment_info" {
+  description = "Glue deployment configuration"
+  value = {
+    version         = var.glue_jobs_version
+    scripts_path    = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/"
+    dependencies_path = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/"
+  }
 }
 
 # Glue Scripts bucket

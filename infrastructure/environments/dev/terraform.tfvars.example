@@ -14,3 +14,10 @@ notification_email = "your-email@example.com"  # Replace with your email
 
 # External SNS Topic ARN (provided by external system)
 external_sns_topic_arn = "arn:aws:sns:eu-west-1:123456789012:s3-events-topic"  # Replace with actual ARN
+
+# Lambda Artifacts Bucket (pre-existing)
+lambda_artifacts_bucket = "my-lambda-artifacts-bucket-name"  # Replace with your bucket name
+
+# Glue Jobs Deployment Configuration
+glue_jobs_version = "latest"  # or "v1.2.3" for specific version
+glue_wheel_version = "1.0.0"  # Should match the wheel version from semantic release

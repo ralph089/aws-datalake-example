@@ -1,4 +1,4 @@
-name: Deploy Glue Jobs
+name: Deploy Glue Jobs (Production)
 
 on:
   workflow_dispatch:
@@ -12,14 +12,10 @@ on:
           - staging
           - prod
       version_tag:
-        description: 'Version tag to deploy (optional, defaults to latest for builds or release tag for releases)'
-        required: false
+        description: 'GitHub release version tag to deploy (e.g., v1.2.3 or glue-v1.2.3)'
+        required: true
         type: string
-      use_release:
-        description: 'Download artifacts from GitHub release (specify release tag in version_tag)'
-        required: false
-        type: boolean
-        default: false
+      # Note: Always deploys from GitHub releases for consistency and traceability
 
 jobs:
   test:
@@ -27,22 +23,24 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      - name: Install UV
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+      
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-      
-      - name: Install Poetry
-        run: pip install poetry
+          python-version: '3.11'
       
       - name: Install dependencies
-        run: cd glue-jobs && poetry install
+        run: cd glue-jobs && uv sync --group dev
       
       - name: Run linter
         run: make lint
       
       - name: Run unit tests
-        run: make test-unit
+        run: make test
 
   deploy:
     needs: test
@@ -56,17 +54,21 @@ jobs:
           # Use user-specified environment
           echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
           
-          # Determine version tag
-          if [ -n "${{ inputs.version_tag }}" ]; then
-            VERSION_TAG="${{ inputs.version_tag }}"
-          else
-            VERSION_TAG="latest"
+          # Version tag is required - no fallback to "latest"
+          VERSION_TAG="${{ inputs.version_tag }}"
+          if [ -z "$VERSION_TAG" ]; then
+            echo "❌ Error: version_tag is required for deployments"
+            exit 1
           fi
           
           # Remove glue-v prefix if present (for S3 paths)
-          VERSION_TAG="${VERSION_TAG#glue-v}"
-          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
-          echo "prefix=$VERSION_TAG" >> $GITHUB_OUTPUT
+          CLEAN_VERSION="${VERSION_TAG#glue-v}"
+          echo "version_tag=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+          echo "prefix=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+          
+          # Extract semantic version for wheel filename (v1.2.3 -> 1.2.3)
+          WHEEL_VERSION="${CLEAN_VERSION#v}"
+          echo "wheel_version=$WHEEL_VERSION" >> $GITHUB_OUTPUT
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -78,10 +80,9 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       
-      - name: Download artifacts from release
-        if: inputs.use_release == true
+      - name: Download artifacts from GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -91,15 +92,42 @@ jobs:
           if [[ ! "$RELEASE_TAG" == glue-v* ]]; then
             RELEASE_TAG="glue-v$RELEASE_TAG"
           fi
-          echo "Downloading from release: $RELEASE_TAG"
-          gh release download "$RELEASE_TAG" --pattern "*.whl" --pattern "requirements.txt" --dir dist/ || echo "No artifacts found for release $RELEASE_TAG"
-      
-      - name: Build packages locally
-        if: inputs.use_release != true
+          echo "📦 Downloading artifacts from GitHub release: $RELEASE_TAG"
+          gh release download "$RELEASE_TAG" --pattern "*.whl" --pattern "requirements.txt" --dir dist/
+          
+          # Verify artifacts were downloaded
+          if ! ls dist/*.whl 1> /dev/null 2>&1; then
+            echo "❌ Error: No wheel files found in release $RELEASE_TAG"
+            echo "Make sure the release exists and contains the required artifacts"
+            exit 1
+          fi
+          
+          if [ ! -f "dist/requirements.txt" ]; then
+            echo "❌ Error: requirements.txt not found in release $RELEASE_TAG"
+            exit 1
+          fi
+          
+          echo "✅ Successfully downloaded release artifacts"
+          
+      - name: Detect wheel version
+        id: wheel
         run: |
-          # Install UV for faster package management
-          pip install uv
-          make package-jobs
+          # Get the actual wheel version from the built/downloaded wheel file
+          if ls dist/*.whl 1> /dev/null 2>&1; then
+            ACTUAL_WHEEL_VERSION=$(ls dist/*.whl | sed -n 's/.*aws_glue_etl_example-\([0-9]\+\.[0-9]\+\.[0-9]\+\)-.*/\1/p' | head -1)
+            echo "detected_version=$ACTUAL_WHEEL_VERSION" >> $GITHUB_OUTPUT
+            echo "📦 Detected wheel version: $ACTUAL_WHEEL_VERSION"
+            
+            # Verify it matches our expected version
+            EXPECTED_VERSION="${{ steps.env.outputs.wheel_version }}"
+            if [ "$ACTUAL_WHEEL_VERSION" != "$EXPECTED_VERSION" ]; then
+              echo "⚠️  Warning: Detected wheel version ($ACTUAL_WHEEL_VERSION) differs from expected version ($EXPECTED_VERSION)"
+              echo "Using detected version for deployment"
+            fi
+          else
+            echo "❌ Error: No wheel file found in dist/"
+            exit 1
+          fi
       
       - name: Deploy to S3
         run: |
@@ -113,16 +141,44 @@ jobs:
           aws s3 cp glue-jobs/src/jobs/ s3://glue-scripts-${{ steps.env.outputs.environment }}/scripts/${{ steps.env.outputs.prefix }}/ \
             --recursive --exclude "*.pyc" --exclude "__pycache__"
       
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      
+      - name: Deploy Infrastructure
+        working-directory: infrastructure/environments/${{ steps.env.outputs.environment }}
+        run: |
+          # Initialize Terraform
+          terraform init
+          
+          # Plan with specific version variables
+          terraform plan \
+            -var="glue_jobs_version=${{ steps.env.outputs.version_tag }}" \
+            -var="glue_wheel_version=${{ steps.wheel.outputs.detected_version }}" \
+            -out=tfplan
+          
+          # Apply the changes
+          terraform apply -auto-approve tfplan
+          
+          echo "✅ Infrastructure updated with version: ${{ steps.env.outputs.version_tag }}"
+          echo "🐍 Wheel version: ${{ steps.wheel.outputs.detected_version }}"
+      
       - name: Deployment Summary
         run: |
           echo "🚀 Glue jobs deployed successfully!"
           echo "📍 Environment: ${{ steps.env.outputs.environment }}"
-          echo "🏷️  Version: ${{ steps.env.outputs.version_tag }}"
-          echo "📦 Scripts Location: s3://glue-scripts-${{ steps.env.outputs.environment }}/scripts/${{ steps.env.outputs.prefix }}/"
-          echo "🐍 Dependencies: s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/"
-          echo "📋 Requirements: s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/requirements.txt"
-          if [ "${{ inputs.use_release }}" == "true" ]; then
-            echo "✅ Deployed from GitHub release artifacts"
-          else
-            echo "🔨 Deployed from locally built artifacts"
-          fi
+          echo "🏷️  Deployment Version: ${{ steps.env.outputs.version_tag }}"
+          echo "🐍 Wheel Version: ${{ steps.wheel.outputs.detected_version }}"
+          echo ""
+          echo "📦 Deployed Locations:"
+          echo "  Scripts: s3://glue-scripts-${{ steps.env.outputs.environment }}/scripts/${{ steps.env.outputs.prefix }}/"
+          echo "  Dependencies: s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/"
+          echo "  Requirements: s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/requirements.txt"
+          echo ""
+          echo "🏗️  Infrastructure:"
+          echo "  Glue jobs updated with version-specific dependencies"
+          echo "  Jobs configured to use: aws_glue_etl_example-${{ steps.wheel.outputs.detected_version }}-py3-none-any.whl"
+          echo ""
+          echo "✅ Deployed from GitHub release: ${{ inputs.version_tag }}"
+          echo "🔒 Production deployment using verified release artifacts"

@@ -24,21 +24,187 @@ module "data_platform" {
   enable_s3_buckets   = true
   medallion_layers    = ["bronze", "silver", "gold"]
   
-  glue_jobs = {
-    simple_etl = {
-      script_location = "s3://${local.glue_scripts_bucket_name}/jobs/simple_etl.py"
-      glue_version    = "5.0"
-      python_version  = "3.11"
-      max_capacity    = 2
-      timeout         = 60
-    }
-    api_to_lake = {
-      script_location = "s3://${local.glue_scripts_bucket_name}/jobs/api_to_lake.py"
-      glue_version    = "5.0"
-      python_version  = "3.11"
-      max_capacity    = 2
-      timeout         = 60
-    }
+  # Commented out - using local Glue job resources for wheel-based deployment
+  # glue_jobs = {
+  #   simple_etl = {
+  #     script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/simple_etl.py"
+  #     glue_version    = "5.0"
+  #     python_version  = "3.11"
+  #     max_capacity    = 2
+  #     timeout         = 60
+  #   }
+  #   api_to_lake = {
+  #     script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/api_to_lake.py"
+  #     glue_version    = "5.0"
+  #     python_version  = "3.11"
+  #     max_capacity    = 2
+  #     timeout         = 60
+  #   }
+  # }
+}
+
+# Data processing IAM role for Glue jobs
+resource "aws_iam_role" "glue_job_role" {
+  name = "${var.environment}-glue-job-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "glue.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "Glue ETL Jobs"
+  }
+}
+
+# Attach AWS Glue Service Role policy
+resource "aws_iam_role_policy_attachment" "glue_service_role" {
+  role       = aws_iam_role.glue_job_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+}
+
+# Custom policy for Glue jobs
+resource "aws_iam_role_policy" "glue_job_policy" {
+  name = "${var.environment}-glue-job-policy"
+  role = aws_iam_role.glue_job_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucketLocation",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${local.glue_scripts_bucket_name}",
+          module.data_platform.s3_bucket_arns["bronze"],
+          module.data_platform.s3_bucket_arns["silver"],
+          module.data_platform.s3_bucket_arns["gold"]
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          "arn:aws:s3:::${local.glue_scripts_bucket_name}/*",
+          "${module.data_platform.s3_bucket_arns["bronze"]}/*",
+          "${module.data_platform.s3_bucket_arns["silver"]}/*",
+          "${module.data_platform.s3_bucket_arns["gold"]}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.environment}/api/credentials*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+        Resource = [
+          "arn:aws:sns:${var.aws_region}:*:${var.environment}-job-notifications"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = [
+          "arn:aws:logs:${var.aws_region}:*:log-group:/aws-glue/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Simple ETL Glue Job
+resource "aws_glue_job" "simple_etl" {
+  name         = "${var.environment}-simple_etl"
+  description  = "Simple ETL job for processing customer data from CSV to Iceberg"
+  role_arn     = aws_iam_role.glue_job_role.arn
+  glue_version = "5.0"
+  
+  command {
+    script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/simple_etl.py"
+    python_version  = "3.11"
+  }
+
+  default_arguments = {
+    "--job-language"                     = "python"
+    "--job-bookmark-option"              = "job-bookmark-enable"
+    "--enable-metrics"                   = "true"
+    "--enable-spark-ui"                  = "true"
+    "--spark-event-logs-path"            = "s3://${local.glue_scripts_bucket_name}/spark-logs/"
+    "--enable-continuous-cloudwatch-log" = "true"
+    "--additional-python-modules"        = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/aws_glue_etl_example-${local.wheel_version}-py3-none-any.whl,s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/requirements.txt"
+    "--JOB_NAME"                         = "${var.environment}-simple_etl"
+    "--env"                              = var.environment
+  }
+
+  max_capacity = 2
+  timeout      = 60
+
+  tags = {
+    Environment = var.environment
+    JobType     = "ETL"
+    Purpose     = "Customer data processing"
+  }
+}
+
+# API to Lake Glue Job  
+resource "aws_glue_job" "api_to_lake" {
+  name         = "${var.environment}-api_to_lake"
+  description  = "API to Lake job for ingesting data from external APIs"
+  role_arn     = aws_iam_role.glue_job_role.arn
+  glue_version = "5.0"
+  
+  command {
+    script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/api_to_lake.py"
+    python_version  = "3.11"
+  }
+
+  default_arguments = {
+    "--job-language"                     = "python"
+    "--job-bookmark-option"              = "job-bookmark-enable"
+    "--enable-metrics"                   = "true"
+    "--enable-spark-ui"                  = "true"
+    "--spark-event-logs-path"            = "s3://${local.glue_scripts_bucket_name}/spark-logs/"
+    "--enable-continuous-cloudwatch-log" = "true"
+    "--additional-python-modules"        = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/aws_glue_etl_example-${local.wheel_version}-py3-none-any.whl,s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/requirements.txt"
+    "--JOB_NAME"                         = "${var.environment}-api_to_lake"
+    "--env"                              = var.environment
+  }
+
+  max_capacity = 2
+  timeout      = 60
+
+  tags = {
+    Environment = var.environment
+    JobType     = "ETL"
+    Purpose     = "API data ingestion"
   }
 }
 
@@ -67,11 +233,11 @@ module "eventbridge" {
   schedules = {
     daily_simple_etl = {
       schedule_expression = "cron(0 2 * * ? *)"  # 2 AM daily
-      target_arn         = module.data_platform.glue_job_arns["simple_etl"]
+      target_arn         = aws_glue_job.simple_etl.arn
     }
     daily_api_to_lake = {
       schedule_expression = "cron(0 3 * * ? *)"  # 3 AM daily
-      target_arn         = module.data_platform.glue_job_arns["api_to_lake"]
+      target_arn         = aws_glue_job.api_to_lake.arn
     }
   }
 }
@@ -104,6 +270,10 @@ locals {
   
   # Use provided bucket name or create auto-generated name
   glue_scripts_bucket_name = var.glue_scripts_bucket != null ? var.glue_scripts_bucket : "glue-scripts-${var.environment}"
+  
+  # Convert glue_jobs_version to wheel_version (remove 'v' prefix if present)
+  # This allows deployment to use a single version parameter
+  wheel_version = replace(var.glue_wheel_version, "v", "")
 }
 
 # Data Lake to API Lambda

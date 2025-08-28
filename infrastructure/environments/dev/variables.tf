@@ -50,3 +50,15 @@ variable "glue_scripts_bucket" {
   type        = string
   default     = null  # If null, will create bucket with auto-generated name
 }
+
+variable "glue_jobs_version" {
+  description = "Version/tag of Glue jobs to deploy (e.g., 'latest', 'v1.0.0')"
+  type        = string
+  default     = "latest"
+}
+
+variable "glue_wheel_version" {
+  description = "Version of the wheel file (should match semantic release version, e.g., '1.0.0')"
+  type        = string
+  default     = "1.0.0"
+}
