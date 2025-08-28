@@ -52,13 +52,23 @@ if [[ -n "$BUCKET" && -n "$OBJECT_KEY" ]]; then
     JOB_ARGS="${JOB_ARGS} --bucket ${BUCKET} --object_key ${OBJECT_KEY}"
 fi
 
+# Prepare dependencies - install wheel file if it exists, otherwise use PYTHONPATH
+echo "🔧 Setting up dependencies..."
+if ls /home/hadoop/workspace/dist/*.whl 1> /dev/null 2>&1; then
+    docker exec glue-local bash -c "pip install --user /home/hadoop/workspace/dist/*.whl"
+    DEPS_READY=true
+else
+    # Fallback to using PYTHONPATH (for development)
+    echo "⚠️  No wheel file found, using PYTHONPATH for dependencies"
+    DEPS_READY=false
+fi
+
 # Run the job with proper log4j configuration
 if [[ "$VERBOSE" == "true" ]]; then
     # Run with standard Spark logging for debugging
     echo "Running with full verbose output..."
     docker exec glue-local spark-submit \
         --master local[*] \
-        --py-files /home/hadoop/workspace/dist/utils.zip \
         --conf "spark.sql.adaptive.enabled=true" \
         --conf "spark.sql.adaptive.coalescePartitions.enabled=true" \
         --conf "spark.serializer=org.apache.spark.serializer.KryoSerializer" \
@@ -69,7 +79,6 @@ else
     echo "📊 Processing data..."
     docker exec glue-local spark-submit \
         --master local[*] \
-        --py-files /home/hadoop/workspace/dist/utils.zip \
         --conf "spark.sql.adaptive.enabled=true" \
         --conf "spark.sql.adaptive.coalescePartitions.enabled=true" \
         --conf "spark.serializer=org.apache.spark.serializer.KryoSerializer" \

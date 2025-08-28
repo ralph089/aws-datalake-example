@@ -6,6 +6,7 @@ services:
       - ./src:/home/hadoop/workspace/src
       - ./tests:/home/hadoop/workspace/tests
       - ./test_data:/home/hadoop/workspace/test_data
+      - ./dist:/home/hadoop/workspace/dist
       - ~/.aws:/home/hadoop/.aws:ro
       - ./pytest.ini:/home/hadoop/workspace/pytest.ini
       - ./pyproject.toml:/home/hadoop/workspace/pyproject.toml

@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - develop
     paths:
       - 'glue-jobs/**'
   workflow_dispatch:
@@ -70,14 +69,7 @@ jobs:
           python-version: '3.11'
 
       - name: Build glue-jobs package
-        run: |
-          cd glue-jobs
-          uv sync
-          uv build
-          mkdir -p ../dist
-          cp dist/*.whl ../dist/
-          # Create utils.zip for Glue
-          cd src && zip -r ../../dist/glue-utils.zip utils transformations -x "*/__pycache__/*"
+        run: make package-jobs
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -90,13 +82,13 @@ jobs:
     name: Python Semantic Release for Glue Jobs
     needs: [test, build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
       id-token: write
     outputs:
-      version: ${{ steps.semantic_release.outputs.version }}
-      released: ${{ steps.semantic_release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+      released: ${{ steps.release.outputs.released }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -123,20 +115,30 @@ jobs:
           name: glue-build-artifacts
           path: dist/
 
-      - name: Run Python Semantic Release
-        id: semantic_release
-        uses: python-semantic-release/python-semantic-release@v9.14.0
+      - name: Action | Semantic Version Release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10.3.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions"
+          git_committer_email: "actions@users.noreply.github.com"
           directory: "./glue-jobs"
 
-      - name: Upload release artifacts
-        if: steps.semantic_release.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Upload distribution files to the release
-          gh release upload glue-v${{ steps.semantic_release.outputs.version }} dist/*.zip dist/*glue*.whl
+      - name: Publish | Upload to GitHub Release Assets
+        uses: python-semantic-release/publish-action@v10.3.1
+        if: steps.release.outputs.released == 'true'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.release.outputs.tag }}
+          directory: "./glue-jobs"
+
+      - name: Upload | Distribution Artifacts
+        uses: actions/upload-artifact@v4
+        if: steps.release.outputs.released == 'true'
+        with:
+          name: glue-distribution-artifacts
+          path: dist
+          if-no-files-found: error
 
   notify-success:
     name: Notify Glue Jobs Release Success
@@ -146,10 +148,11 @@ jobs:
     steps:
       - name: Release Success Notification
         run: |
-          echo "🎉 Glue Jobs release glue-v${{ needs.release.outputs.version }} completed successfully!"
-          echo "📦 New version has been published"
+          echo "🎉 Glue Jobs release ${{ needs.release.outputs.version }} completed successfully!"
+          echo "📦 New version has been published to GitHub Release"
           echo "📋 Changelog has been updated"
           echo "🏷️ Git tag has been created"
+          echo "📁 Distribution artifacts uploaded"
 
   notify-no-release:
     name: Notify No Glue Jobs Release Needed

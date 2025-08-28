@@ -155,16 +155,11 @@ build_command = """
 upload_to_vcs_release = true
 
 # Tag settings
-tag_format = "lambda-v{version}"
+tag_format = "lambda-data-lake-to-api-v{version}"
 
 [tool.semantic_release.branches.main]
 match = "main"
 prerelease = false
-
-[tool.semantic_release.branches.develop]
-match = "develop"
-prerelease = true
-prerelease_token = "beta"
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = [

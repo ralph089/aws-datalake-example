@@ -1,4 +1,4 @@
-.PHONY: help setup setup-lambda test test-integration test-lambda test-all lint lint-lambda format format-lambda type-check type-check-lambda run-local clean clean-lambda package-lambda list-lambdas release-glue-dry-run release-lambda-dry-run release-glue release-lambda
+.PHONY: help setup setup-lambda test test-integration test-lambda test-all lint lint-lambda format format-lambda type-check type-check-lambda run-local clean clean-lambda package-jobs package-lambda list-lambdas release-glue-dry-run release-lambda-dry-run release-glue release-lambda
 
 # Lambda discovery
 LAMBDA_DIRS := $(shell find lambdas -maxdepth 1 -type d -name "*" ! -name "lambdas" | sort)
@@ -221,11 +221,23 @@ run-local: ## Run job locally (usage: make run-local JOB=simple_etl)
 	cd glue-jobs && PYTHONPATH=src uv run python src/jobs/$(JOB).py
 	@echo "✅ Job $(JOB) completed!"
 
+package-jobs: ## Build glue-jobs wheel package for deployment
+	@echo "📦 Building glue-jobs wheel package..."
+	@mkdir -p dist
+	cd glue-jobs && uv sync
+	cd glue-jobs && uv build
+	@cp glue-jobs/dist/*.whl dist/
+	@echo "📋 Exporting requirements for external dependencies..."
+	cd glue-jobs && uv export --format requirements-txt --no-hashes --no-emit-project > ../dist/requirements.txt
+	@echo "✅ Glue-jobs package created in dist/"
+	@ls -la dist/
+
 clean: ## Clean up generated files
 	@echo "Cleaning up..."
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -rf dist/
+	rm -rf glue-jobs/dist/
 	rm -rf glue-jobs/.coverage
 	rm -rf glue-jobs/.pytest_cache
 	rm -f glue-jobs/requirements.txt

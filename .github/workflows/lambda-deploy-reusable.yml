@@ -34,6 +34,11 @@ on:
         required: false
         type: string
         default: 'latest'
+      release_tag:
+        description: 'GitHub release tag to download artifacts from'
+        required: false
+        type: string
+        default: ''
     secrets:
       AWS_ROLE_TO_ASSUME:
         description: 'AWS role to assume for deployment'
@@ -60,7 +65,27 @@ jobs:
         with:
           python-version: ${{ inputs.python_version }}
 
+      - name: Download artifacts from release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Downloading artifacts from release: ${{ inputs.release_tag }}"
+          # Try to download the specific lambda deployment zip
+          gh release download ${{ inputs.release_tag }} \
+            --pattern "lambda-${{ inputs.lambda_name }}.zip" \
+            --dir ${{ inputs.lambda_path }}/ || echo "No deployment zip found for ${{ inputs.lambda_name }}"
+          
+          # Rename to expected filename if found
+          if [ -f "${{ inputs.lambda_path }}/lambda-${{ inputs.lambda_name }}.zip" ]; then
+            mv "${{ inputs.lambda_path }}/lambda-${{ inputs.lambda_name }}.zip" "${{ inputs.lambda_path }}/deployment.zip"
+            echo "✅ Downloaded deployment package from release"
+          else
+            echo "❌ No deployment package found in release, will build locally"
+          fi
+
       - name: Build with uv (fastest)
+        if: inputs.release_tag == '' || !hashFiles(format('{0}/deployment.zip', inputs.lambda_path))
         working-directory: ${{ inputs.lambda_path }}
         run: |
           # Install uv
@@ -81,6 +106,7 @@ jobs:
 
           # Create deployment package
           cd uv-deploy && zip -r ../deployment.zip . && cd ..
+          echo "✅ Built deployment package locally"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@209f2a4450bb4b277e1dedaff40ad2fd8d4d0a4c # v4.3.0
@@ -118,3 +144,8 @@ jobs:
           echo "✅ Lambda ${{ inputs.lambda_name }} deployed to ${{ inputs.environment }}"
           echo "Function: ${{ inputs.environment }}-${{ inputs.lambda_name }}"
           echo "S3: s3://${{ inputs.s3_bucket }}/${{ inputs.environment }}/${{ inputs.lambda_name }}/${{ inputs.version_tag }}/deployment.zip"
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            echo "📦 Deployed from GitHub release: ${{ inputs.release_tag }}"
+          else
+            echo "🔨 Deployed from locally built artifacts"
+          fi

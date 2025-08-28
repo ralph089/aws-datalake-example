@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: 'latest'
+      use_release:
+        description: 'Download artifacts from GitHub release (specify lambda release tag in version_tag)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   discover-lambdas:
@@ -36,6 +41,7 @@ jobs:
           if [ -n "${{ inputs.lambda_name }}" ]; then
             # Deploy specific lambda
             echo "lambdas=[{\"name\":\"${{ inputs.lambda_name }}\",\"path\":\"lambdas/${{ inputs.lambda_name }}\"}]" >> $GITHUB_OUTPUT
+            echo "Deploying specific lambda: ${{ inputs.lambda_name }}"
           else
             # Deploy all lambdas
             LAMBDAS="["
@@ -56,6 +62,7 @@ jobs:
             
             LAMBDAS="$LAMBDAS]"
             echo "lambdas=$LAMBDAS" >> $GITHUB_OUTPUT
+            echo "Deploying all lambdas: $LAMBDAS"
           fi
 
   deploy-lambdas:
@@ -72,7 +79,8 @@ jobs:
       python_version: '3.13'
       aws_region: 'eu-west-1'
       s3_bucket: 'lambda-artifacts-${{ inputs.environment }}'
-      version_tag: ${{ inputs.version_tag || 'latest' }}
+      version_tag: ${{ inputs.version_tag }}
+      release_tag: ${{ inputs.use_release == true && inputs.version_tag || '' }}
     secrets:
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
       LAMBDA_EXECUTION_ROLE_ARN: ${{ secrets.LAMBDA_EXECUTION_ROLE_ARN }}

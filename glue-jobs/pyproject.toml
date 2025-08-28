@@ -5,7 +5,7 @@ description = "Simple AWS Glue ETL Pipeline Examples"
 authors = [
     {name = "Data Engineering Team"}
 ]
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     # AWS SDK
@@ -155,11 +155,6 @@ tag_format = "glue-v{version}"
 [tool.semantic_release.branches.main]
 match = "main"
 prerelease = false
-
-[tool.semantic_release.branches.develop]
-match = "develop"
-prerelease = true
-prerelease_token = "beta"
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = [

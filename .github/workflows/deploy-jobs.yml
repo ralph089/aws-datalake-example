@@ -1,18 +1,6 @@
 name: Deploy Glue Jobs
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'glue-jobs/**'
-  pull_request:
-    types: [opened, synchronize]
-    paths:
-      - 'glue-jobs/**'
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       environment:
@@ -24,9 +12,14 @@ on:
           - staging
           - prod
       version_tag:
-        description: 'Version tag to deploy (optional, defaults to latest)'
+        description: 'Version tag to deploy (optional, defaults to latest for builds or release tag for releases)'
         required: false
         type: string
+      use_release:
+        description: 'Download artifacts from GitHub release (specify release tag in version_tag)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -57,41 +50,23 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Determine environment and version
+      - name: Set deployment parameters
         id: env
         run: |
-          # Determine version/tag to use
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.version_tag }}" ]; then
+          # Use user-specified environment
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          
+          # Determine version tag
+          if [ -n "${{ inputs.version_tag }}" ]; then
             VERSION_TAG="${{ inputs.version_tag }}"
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            VERSION_TAG="${{ github.event.release.tag_name }}"
-            # Remove glue-v prefix for S3 paths
-            VERSION_TAG="${VERSION_TAG#glue-v}"
           else
             VERSION_TAG="latest"
           fi
-          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           
-          # Determine environment and prefix
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
-            echo "prefix=${VERSION_TAG}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "prefix=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "prefix=${VERSION_TAG}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "prefix=main" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
-            echo "environment=staging" >> $GITHUB_OUTPUT
-            echo "prefix=main" >> $GITHUB_OUTPUT
-          else
-            echo "environment=dev" >> $GITHUB_OUTPUT
-            echo "prefix=feature" >> $GITHUB_OUTPUT
-          fi
+          # Remove glue-v prefix if present (for S3 paths)
+          VERSION_TAG="${VERSION_TAG#glue-v}"
+          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
+          echo "prefix=$VERSION_TAG" >> $GITHUB_OUTPUT
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -105,67 +80,49 @@ jobs:
         with:
           python-version: '3.10'
       
-      - name: Install Poetry
-        run: pip install poetry
-      
-      - name: Package Glue jobs
+      - name: Download artifacts from release
+        if: inputs.use_release == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd glue-jobs
-          poetry export -f requirements.txt --output requirements.txt --without-hashes
-          cd src && zip -r ../../dist/utils.zip utils transformations validators -x "*/__pycache__/*"
+          mkdir -p dist
+          RELEASE_TAG="${{ inputs.version_tag }}"
+          # Add glue-v prefix if not present for release downloads
+          if [[ ! "$RELEASE_TAG" == glue-v* ]]; then
+            RELEASE_TAG="glue-v$RELEASE_TAG"
+          fi
+          echo "Downloading from release: $RELEASE_TAG"
+          gh release download "$RELEASE_TAG" --pattern "*.whl" --pattern "requirements.txt" --dir dist/ || echo "No artifacts found for release $RELEASE_TAG"
+      
+      - name: Build packages locally
+        if: inputs.use_release != true
+        run: |
+          # Install UV for faster package management
+          pip install uv
+          make package-jobs
       
       - name: Deploy to S3
         run: |
-          # Upload utils library
-          aws s3 cp dist/utils.zip s3://glue-scripts-${{ steps.env.outputs.environment }}/libs/${{ steps.env.outputs.prefix }}/utils.zip
+          # Upload wheel file for dependencies
+          aws s3 cp dist/*.whl s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/
+          
+          # Upload requirements.txt for external dependencies
+          aws s3 cp dist/requirements.txt s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/requirements.txt
           
           # Upload job scripts
-          aws s3 cp glue-jobs/src/jobs/ s3://glue-scripts-${{ steps.env.outputs.environment }}/jobs/${{ steps.env.outputs.prefix }}/ \
+          aws s3 cp glue-jobs/src/jobs/ s3://glue-scripts-${{ steps.env.outputs.environment }}/scripts/${{ steps.env.outputs.prefix }}/ \
             --recursive --exclude "*.pyc" --exclude "__pycache__"
       
-      - name: Update Glue job definitions for PR
-        if: github.event_name == 'pull_request'
+      - name: Deployment Summary
         run: |
-          # Update Glue jobs to use PR-specific scripts for testing
-          for job in customer_import sales_etl inventory_sync product_catalog; do
-            aws glue update-job \
-              --job-name ${job}-dev \
-              --job-update "Command={ScriptLocation=s3://glue-scripts-dev/jobs/${{ steps.env.outputs.prefix }}/${job}.py}" \
-              || echo "Job ${job}-dev not found, skipping"
-          done
-      
-      - name: Comment PR with deployment info
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.name,
-              body: `✅ Glue jobs deployed to dev for testing
-              
-              **Version:** \`${{ steps.env.outputs.version_tag }}\`
-              **Scripts Location:** \`s3://glue-scripts-dev/jobs/pr-${{ github.event.pull_request.number }}/\`
-              **Utils Library:** \`s3://glue-scripts-dev/libs/pr-${{ github.event.pull_request.number }}/utils.zip\`
-              
-              **Test your changes:**
-              1. Go to AWS Glue Console (dev environment)
-              2. Jobs are configured to use your PR scripts
-              3. Run jobs with test data
-              4. Check CloudWatch logs for results
-              
-              Scripts will revert to main after merge.`
-            })
-
-      - name: Comment on release deployment
-        if: github.event_name == 'release'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const releaseTag = '${{ steps.env.outputs.version_tag }}';
-            const environment = '${{ steps.env.outputs.environment }}';
-            
-            console.log(`🚀 Glue jobs deployed for release ${releaseTag} to ${environment} environment`);
-            console.log(`📦 Scripts Location: s3://glue-scripts-${environment}/jobs/${releaseTag}/`);
-            console.log(`📚 Utils Library: s3://glue-scripts-${environment}/libs/${releaseTag}/utils.zip`);
+          echo "🚀 Glue jobs deployed successfully!"
+          echo "📍 Environment: ${{ steps.env.outputs.environment }}"
+          echo "🏷️  Version: ${{ steps.env.outputs.version_tag }}"
+          echo "📦 Scripts Location: s3://glue-scripts-${{ steps.env.outputs.environment }}/scripts/${{ steps.env.outputs.prefix }}/"
+          echo "🐍 Dependencies: s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/"
+          echo "📋 Requirements: s3://glue-scripts-${{ steps.env.outputs.environment }}/dependencies/${{ steps.env.outputs.prefix }}/requirements.txt"
+          if [ "${{ inputs.use_release }}" == "true" ]; then
+            echo "✅ Deployed from GitHub release artifacts"
+          else
+            echo "🔨 Deployed from locally built artifacts"
+          fi

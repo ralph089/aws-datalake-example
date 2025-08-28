@@ -8,11 +8,9 @@ to validate end-to-end functionality.
 import tempfile
 
 import pytest
-from pyspark.sql import SparkSession
 
 from config import create_local_config
 from jobs.api_to_lake import APIToLakeJob
-
 
 # Removed duplicate spark fixture - using the one from conftest.py
 
@@ -82,12 +80,13 @@ class TestAPIToLakeIntegration:
 
         # Load actual test data from JSON file using relative path
         import json
+
         test_data_path = "test_data/api_to_lake/products_api.json"
-        
+
         # Read the JSON file and extract the data array
         with open(test_data_path) as f:
             json_data = json.load(f)
-        
+
         test_df = spark.createDataFrame(json_data["data"])
 
         # Verify data loaded

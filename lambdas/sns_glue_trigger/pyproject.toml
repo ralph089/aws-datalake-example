@@ -82,15 +82,11 @@ line-ending = "auto"
 version_toml = ["pyproject.toml:project.version"]
 build_command = "uv sync && uv run python -m build"
 upload_to_vcs_release = true
+tag_format = "lambda-sns-glue-trigger-v{version}"
 
 [tool.semantic_release.branches.main]
 match = "main"
 prerelease = false
-
-[tool.semantic_release.branches.develop]
-match = "develop"
-prerelease = true
-prerelease_token = "beta"
 
 [tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"

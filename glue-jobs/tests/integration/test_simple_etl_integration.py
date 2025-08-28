@@ -8,11 +8,9 @@ to validate end-to-end functionality.
 import tempfile
 
 import pytest
-from pyspark.sql import SparkSession
 
 from config import create_local_config
 from jobs.simple_etl import SimpleETLJob
-
 
 # Removed duplicate spark fixture - using the one from conftest.py
 
@@ -48,13 +46,19 @@ class TestSimpleETLIntegration:
 
     def test_simple_etl_data_transformation(self, spark):
         """Test data transformation logic in isolation."""
-        config = create_local_config("simple_etl_transform_test", enable_notifications=False)
+        config = create_local_config(
+            "simple_etl_transform_test", enable_notifications=False
+        )
         job = SimpleETLJob(config)
         job.spark = spark
 
         # Load actual test data from CSV file using relative path
         test_data_path = "test_data/simple_etl/customers.csv"
-        test_df = spark.read.option("header", "true").option("inferSchema", "true").csv(test_data_path)
+        test_df = (
+            spark.read.option("header", "true")
+            .option("inferSchema", "true")
+            .csv(test_data_path)
+        )
 
         # Verify data loaded
         assert test_df is not None
@@ -79,16 +83,18 @@ class TestSimpleETLIntegration:
         job.spark = spark
 
         # Create empty DataFrame with expected schema using the spark fixture
-        from pyspark.sql.types import StructType, StructField, IntegerType, StringType
-        
-        schema = StructType([
-            StructField("customer_id", IntegerType(), True),
-            StructField("name", StringType(), True),
-            StructField("email", StringType(), True),
-            StructField("phone", StringType(), True),
-            StructField("signup_date", StringType(), True)
-        ])
-        
+        from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+
+        schema = StructType(
+            [
+                StructField("customer_id", IntegerType(), True),
+                StructField("name", StringType(), True),
+                StructField("email", StringType(), True),
+                StructField("phone", StringType(), True),
+                StructField("signup_date", StringType(), True),
+            ]
+        )
+
         empty_df = spark.createDataFrame([], schema)
 
         # Job should handle empty data gracefully
