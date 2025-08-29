@@ -9,7 +9,7 @@ import tempfile
 
 import pytest
 
-from config import create_local_config
+from glue_etl_lib.config import create_local_config
 from jobs.simple_etl import SimpleETLJob
 
 # Removed duplicate spark fixture - using the one from conftest.py

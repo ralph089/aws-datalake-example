@@ -9,7 +9,7 @@ import tempfile
 
 import pytest
 
-from config import create_local_config
+from glue_etl_lib.config import create_local_config
 from jobs.api_to_lake import APIToLakeJob
 
 # Removed duplicate spark fixture - using the one from conftest.py

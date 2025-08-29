@@ -19,9 +19,9 @@ from pyspark.sql.types import (
     StructType,
 )
 
-from config import create_config_from_glue_args, create_local_config
-from jobs.base_job import BaseGlueJob
-from transformations import add_processing_metadata
+from glue_etl_lib.config import create_config_from_glue_args, create_local_config
+from glue_etl_lib.base_job import BaseGlueJob
+from glue_etl_lib.transformations import add_processing_metadata
 
 
 # Helper functions for typed column operations

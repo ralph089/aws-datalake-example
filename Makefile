@@ -227,8 +227,7 @@ package-jobs: ## Build glue-jobs wheel package for deployment
 	cd glue-jobs && uv sync
 	cd glue-jobs && uv build
 	@cp glue-jobs/dist/*.whl dist/
-	@echo "📋 Exporting requirements for external dependencies..."
-	cd glue-jobs && uv export --format requirements-txt --no-hashes --no-emit-project > ../dist/requirements.txt
+	@echo "📋 Skipping requirements.txt export (AWS Glue 4.0 uses wheel-only dependencies)"
 	@echo "✅ Glue-jobs package created in dist/"
 	@ls -la dist/
 

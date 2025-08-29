@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pyspark.sql import SparkSession
 
-from config import create_local_config
+from glue_etl_lib.config import create_local_config
 
 
 @pytest.fixture

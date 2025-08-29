@@ -29,14 +29,14 @@ module "data_platform" {
   #   simple_etl = {
   #     script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/simple_etl.py"
   #     glue_version    = "5.0"
-  #     python_version  = "3.11"
+  #     python_version  = "3"
   #     max_capacity    = 2
   #     timeout         = 60
   #   }
   #   api_to_lake = {
   #     script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/api_to_lake.py"
   #     glue_version    = "5.0"
-  #     python_version  = "3.11"
+  #     python_version  = "3"
   #     max_capacity    = 2
   #     timeout         = 60
   #   }
@@ -145,11 +145,11 @@ resource "aws_glue_job" "simple_etl" {
   name         = "${var.environment}-simple_etl"
   description  = "Simple ETL job for processing customer data from CSV to Iceberg"
   role_arn     = aws_iam_role.glue_job_role.arn
-  glue_version = "5.0"
+  glue_version = "4.0"
   
   command {
     script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/simple_etl.py"
-    python_version  = "3.11"
+    python_version  = "3"
   }
 
   default_arguments = {
@@ -159,7 +159,7 @@ resource "aws_glue_job" "simple_etl" {
     "--enable-spark-ui"                  = "true"
     "--spark-event-logs-path"            = "s3://${local.glue_scripts_bucket_name}/spark-logs/"
     "--enable-continuous-cloudwatch-log" = "true"
-    "--additional-python-modules"        = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/aws_glue_etl_example-${local.wheel_version}-py3-none-any.whl,s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/requirements.txt"
+    "--additional-python-modules"        = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/aws_glue_etl_example-${local.wheel_version}-py3-none-any.whl"
     "--JOB_NAME"                         = "${var.environment}-simple_etl"
     "--env"                              = var.environment
   }
@@ -179,11 +179,11 @@ resource "aws_glue_job" "api_to_lake" {
   name         = "${var.environment}-api_to_lake"
   description  = "API to Lake job for ingesting data from external APIs"
   role_arn     = aws_iam_role.glue_job_role.arn
-  glue_version = "5.0"
+  glue_version = "4.0"
   
   command {
     script_location = "s3://${local.glue_scripts_bucket_name}/scripts/${var.glue_jobs_version}/api_to_lake.py"
-    python_version  = "3.11"
+    python_version  = "3"
   }
 
   default_arguments = {
@@ -193,7 +193,7 @@ resource "aws_glue_job" "api_to_lake" {
     "--enable-spark-ui"                  = "true"
     "--spark-event-logs-path"            = "s3://${local.glue_scripts_bucket_name}/spark-logs/"
     "--enable-continuous-cloudwatch-log" = "true"
-    "--additional-python-modules"        = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/aws_glue_etl_example-${local.wheel_version}-py3-none-any.whl,s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/requirements.txt"
+    "--additional-python-modules"        = "s3://${local.glue_scripts_bucket_name}/dependencies/${var.glue_jobs_version}/aws_glue_etl_example-${local.wheel_version}-py3-none-any.whl"
     "--JOB_NAME"                         = "${var.environment}-api_to_lake"
     "--env"                              = var.environment
   }

@@ -27,7 +27,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/glue_etl_lib"]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -60,8 +60,8 @@ exclude = [
     "venv",
 ]
 
-# Assume Python 3.11
-target-version = "py311"
+# Assume Python 3.10 (for AWS Glue 4.0 compatibility)
+target-version = "py310"
 
 [tool.ruff.lint]
 # See https://beta.ruff.rs/docs/rules/ for a full list of supported rules.
@@ -130,7 +130,7 @@ dev = [
 # Version source and management
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [
-    "src/config.py:__version__",
+    "src/glue_etl_lib/config.py:__version__",
 ]
 
 # Git settings

@@ -10,9 +10,9 @@ import sys
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import col, concat, lit, when
 
-from config import create_config_from_glue_args, create_local_config
-from jobs.base_job import BaseGlueJob
-from transformations import add_processing_metadata, clean_email, standardize_name
+from glue_etl_lib.config import create_config_from_glue_args, create_local_config
+from glue_etl_lib.base_job import BaseGlueJob
+from glue_etl_lib.transformations import add_processing_metadata, clean_email, standardize_name
 
 
 class SimpleETLJob(BaseGlueJob):

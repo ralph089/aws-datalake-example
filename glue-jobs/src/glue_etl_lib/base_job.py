@@ -9,11 +9,11 @@ from pathlib import Path
 
 from pyspark.sql import DataFrame, SparkSession
 
-from config import JobConfig
-from utils.api_client import APIClient
-from utils.logging import setup_logging
-from utils.notifications import NotificationService
-from utils.secrets import get_secret
+from glue_etl_lib.config import JobConfig
+from glue_etl_lib.utils.api_client import APIClient
+from glue_etl_lib.utils.logging import setup_logging
+from glue_etl_lib.utils.notifications import NotificationService
+from glue_etl_lib.utils.secrets import get_secret
 
 
 class BaseGlueJob(ABC):

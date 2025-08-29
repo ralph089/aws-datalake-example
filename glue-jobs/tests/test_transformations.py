@@ -6,7 +6,7 @@ import pytest
 from pyspark.sql.functions import col
 from pyspark.sql.types import DecimalType, StructField, StructType
 
-from transformations import (
+from glue_etl_lib.transformations import (
     add_processing_metadata,
     categorize_amount,
     clean_email,

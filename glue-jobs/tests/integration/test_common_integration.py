@@ -8,10 +8,10 @@ and that basic functionality works across all jobs.
 import pytest
 from pyspark.sql import SparkSession
 
-from config import create_local_config
-from transformations import clean_email, standardize_name
-from utils.logging import setup_logging
-from utils.notifications import NotificationService
+from glue_etl_lib.config import create_local_config
+from glue_etl_lib.transformations import clean_email, standardize_name
+from glue_etl_lib.utils.logging import setup_logging
+from glue_etl_lib.utils.notifications import NotificationService
 
 
 @pytest.fixture(scope="module")
