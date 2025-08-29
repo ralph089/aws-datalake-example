@@ -1,6 +1,6 @@
 services:
   glue:
-    image: public.ecr.aws/glue/aws-glue-libs:5
+    image: public.ecr.aws/glue/aws-glue-libs:glue_libs_4.0.0_image_01
     container_name: glue-local
     volumes:
       - ./src:/home/hadoop/workspace/src
@@ -10,7 +10,6 @@ services:
       - ~/.aws:/home/hadoop/.aws:ro
       - ./pytest.ini:/home/hadoop/workspace/pytest.ini
       - ./pyproject.toml:/home/hadoop/workspace/pyproject.toml
-      - ./requirements.txt:/home/hadoop/workspace/requirements.txt
       - ./log4j-local.properties:/home/hadoop/workspace/log4j-local.properties
     environment:
       - DISABLE_SSL=true
@@ -19,7 +18,7 @@ services:
       - PYTEST_INTEGRATION=1
     working_dir: /home/hadoop/workspace
     entrypoint: ["/bin/sh", "-c"]
-    command: ["pip install --user -r /home/hadoop/workspace/requirements.txt && echo 'Dependencies installed successfully' && tail -f /dev/null"]
+    command: ["echo 'AWS Glue 4.0 container ready for testing' && tail -f /dev/null"]
     stdin_open: true
     tty: true
     ports:

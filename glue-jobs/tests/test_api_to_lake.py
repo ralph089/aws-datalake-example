@@ -124,8 +124,8 @@ class TestAPIToLakeJob:
         assert result is False
 
     @pytest.mark.unit
-    @patch("jobs.base_job.APIClient")
-    @patch("jobs.base_job.get_secret")
+    @patch("glue_etl_lib.base_job.APIClient")
+    @patch("glue_etl_lib.base_job.get_secret")
     def test_fetch_from_api_with_pagination(
         self, mock_get_secret, mock_api_client_class, spark, sample_config
     ):

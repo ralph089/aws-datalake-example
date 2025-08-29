@@ -72,14 +72,17 @@ test-lambda: ## Run lambda unit tests (usage: make test-lambda LAMBDA=sns_glue_t
 	fi
 	@echo "✅ Lambda unit tests completed!"
 
-test-integration: ## Run integration tests in Docker
-	@echo "🐳 Starting Docker integration tests..."
-	@echo "📦 Using Docker-optimized requirements.txt (PySpark pre-installed in container)..."
-	@$(MAKE) requirements-docker
+test-integration: ## Run integration tests in Docker using wheel (AWS Glue production-like)
+	@echo "🐳 Starting AWS Glue production-like integration tests..."
+	@echo "📦 Building wheel package first (matching AWS Glue deployment)..."
+	@$(MAKE) package-jobs
 	cd glue-jobs && docker-compose up -d
 	@echo "⏳ Waiting for container to be ready..."
 	@sleep 15
-	cd glue-jobs && docker-compose exec -T glue bash -c "pip install --user -r requirements.txt && python -m pytest -m integration --with-integration -v --tb=short"
+	@echo "🔧 Installing wheel package in container (simulating --extra-py-files)..."
+	cd glue-jobs && docker-compose exec -T glue bash -c "pip install --user /home/hadoop/workspace/dist/*.whl"
+	@echo "🧪 Running integration tests..."
+	cd glue-jobs && docker-compose exec -T glue bash -c "python -m pytest -m integration --with-integration -v --tb=short"
 	@echo "🛑 Stopping Docker containers..."
 	cd glue-jobs && docker-compose down
 	@echo "✅ Integration tests completed!"
@@ -249,22 +252,6 @@ clean: ## Clean up generated files
 	done
 	@echo "✅ Cleanup completed!"
 
-requirements-docker: ## Generate Docker-optimized requirements.txt (excludes pre-installed packages)
-	@echo "📦 Generating Docker-optimized requirements.txt..."
-	@cd glue-jobs && echo "# Docker requirements for AWS Glue integration tests" > requirements.txt
-	@cd glue-jobs && echo "# PySpark, PyArrow, boto3, pandas, numpy are pre-installed in the Glue container" >> requirements.txt
-	@cd glue-jobs && echo "" >> requirements.txt
-	@cd glue-jobs && uv export --no-hashes --no-emit-project | \
-		grep -v "^#" | \
-		grep -v "^$$" | \
-		grep -v "^pyspark==" | \
-		grep -v "^boto3==" | \
-		grep -v "^pyarrow==" | \
-		grep -v "^pandas==" | \
-		grep -v "^numpy==" | \
-		grep -v "^botocore==" | \
-		grep -v "^s3transfer==" >> requirements.txt
-	@echo "✅ Docker-optimized requirements.txt generated!"
 
 release-glue-dry-run: ## Test what the next glue-jobs version would be (dry run)
 	@echo "🧪 Running glue-jobs semantic-release dry run..."
